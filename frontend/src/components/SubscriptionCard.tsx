@@ -1,28 +1,23 @@
-import React, { useState } from "react";
-import { buildPauseTx, buildResumeTx } from "../stellar";
-import { friendlyError } from "../utils/errors";
+import React from "react";
+import CopyButton from "./CopyButton";
+import NextChargeCountdown from "./NextChargeCountdown";
+import { Subscription } from "../types";
+import { BILLING_INTERVALS, STROOPS_PER_XLM } from "../constants";
 
 interface SubscriptionCardProps {
-  subscription: {
-    merchant: string;
-    amount: string;
-    interval: number;
-    last_charged: number;
-    active: boolean;
-    paused: boolean;
-    referrer: string | null;
-    label: string;
-  };
-  userKey: string;
+  subscription: Subscription;
   onCancel: () => void;
   onPause: (xdr: string) => Promise<string>;
   onRefresh: () => void;
 }
 
 function formatInterval(secs: number): string {
-  if (secs >= 2_592_000) return `${Math.round(secs / 2_592_000)}mo`;
-  if (secs >= 604_800) return `${Math.round(secs / 604_800)}w`;
-  if (secs >= 86_400) return `${Math.round(secs / 86_400)}d`;
+  const monthly = BILLING_INTERVALS[2].value;
+  const weekly = BILLING_INTERVALS[1].value;
+  const daily = BILLING_INTERVALS[0].value;
+  if (secs >= monthly) return `${Math.round(secs / monthly)}mo`;
+  if (secs >= weekly) return `${Math.round(secs / weekly)}w`;
+  if (secs >= daily) return `${Math.round(secs / daily)}d`;
   return `${secs}s`;
 }
 
@@ -33,71 +28,46 @@ export default function SubscriptionCard({
   onPause,
   onRefresh,
 }: SubscriptionCardProps) {
-  const { merchant, amount, interval, last_charged, active, paused, referrer, label } = subscription;
-  const nextCharge = new Date(
-    (last_charged + interval) * 1000
-  ).toLocaleDateString();
-  const xlm = (Number(amount) / 10_000_000).toFixed(7);
-  const [pauseLoading, setPauseLoading] = useState(false);
-  const [resumeLoading, setResumeLoading] = useState(false);
-  const [showPauseConfirm, setShowPauseConfirm] = useState(false);
-  const [pauseStatus, setPauseStatus] = useState<string | null>(null);
-
-  async function handlePause() {
-    setPauseStatus(null);
-    setPauseLoading(true);
-    try {
-      const xdr = await buildPauseTx(userKey);
-      const hash = await onPause(xdr);
-      setPauseStatus(`Paused! tx: ${hash.slice(0, 12)}…`);
-      onRefresh();
-      setShowPauseConfirm(false);
-    } catch (e: unknown) {
-      const rawMessage = e instanceof Error ? e.message : String(e);
-      setPauseStatus(`Error: ${friendlyError(rawMessage)}`);
-    } finally {
-      setPauseLoading(false);
-    }
-  }
-
-  async function handleResume() {
-    setPauseStatus(null);
-    setResumeLoading(true);
-    try {
-      const xdr = await buildResumeTx(userKey);
-      const hash = await onPause(xdr);
-      setPauseStatus(`Resumed! tx: ${hash.slice(0, 12)}…`);
-      onRefresh();
-    } catch (e: unknown) {
-      const rawMessage = e instanceof Error ? e.message : String(e);
-      setPauseStatus(`Error: ${friendlyError(rawMessage)}`);
-    } finally {
-      setResumeLoading(false);
-    }
-  }
-
-  const statusBadgeClass = paused ? "badge-paused" : active ? "badge-active" : "badge-inactive";
-  const statusText = paused ? "Paused" : active ? "Active" : "Cancelled";
+  const { merchant, amount, interval, last_charged, active } = subscription;
+  const nextChargeTimestamp = last_charged + interval;
+  const xlm = (Number(amount) / STROOPS_PER_XLM).toFixed(2);
 
   return (
     <div className="card">
       <div className="subscription-card__header">
         <div>
-          <h2 className="subscription-card__title">{label}</h2>
-          <small className="subscription-card__subtitle">to {merchant.slice(0, 8)}…{merchant.slice(-6)}</small>
+          <h2 className="subscription-card__title">Your Subscription</h2>
+          {subscription.label && (
+            <p className="subscription-card__label">{subscription.label}</p>
+          )}
         </div>
-        <span className={`badge ${statusBadgeClass}`}>
-          {statusText}
+        <span className={`badge ${active ? "badge-active" : "badge-inactive"}`}>
+          {active ? "Active" : "Cancelled"}
         </span>
       </div>
 
       <div className="subscription-rows">
+        <div className="subscription-row">
+          <span className="subscription-row__label">Merchant</span>
+          <div className="merchant-row">
+            <span className="merchant-row__address">
+              {`${merchant.slice(0, 8)}…${merchant.slice(-6)}`}
+            </span>
+            <CopyButton text={merchant} />
+          </div>
+        </div>
         <Row label="Amount" value={`${xlm} XLM`} />
         <Row label="Interval" value={formatInterval(interval)} />
-        <Row label="Next charge" value={active && !paused ? nextCharge : "—"} />
-        {referrer && (
-          <Row label="Referrer" value={`${referrer.slice(0, 8)}…${referrer.slice(-6)}`} />
-        )}
+        <div className="subscription-row">
+          <span className="subscription-row__label">Next charge</span>
+          <span className="subscription-row__value">
+            {active ? (
+              <NextChargeCountdown nextChargeTimestamp={nextChargeTimestamp} />
+            ) : (
+              "—"
+            )}
+          </span>
+        </div>
       </div>
 
       <div className="subscription-card__actions">
