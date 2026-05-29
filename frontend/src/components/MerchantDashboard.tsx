@@ -27,6 +27,7 @@ export default function MerchantDashboard({
       if (prev.length === 0) setLoading(true);
       return prev;
     });
+    setSubscribers((prev) => { if (prev.length === 0) setLoading(true); return prev; });
     setError(null);
 
     try {

@@ -7,6 +7,8 @@ import { BILLING_INTERVALS, STROOPS_PER_XLM } from "../constants";
 interface SubscriptionCardProps {
   subscription: Subscription;
   onCancel: () => void;
+  onPause: (xdr: string) => Promise<string>;
+  onRefresh: () => void;
 }
 
 function formatInterval(secs: number): string {
@@ -19,9 +21,32 @@ function formatInterval(secs: number): string {
   return `${secs}s`;
 }
 
+function formatTrialStatus(
+  trial_duration: number,
+  last_charged: number
+): { isInTrial: boolean; trialEndDate: string; trialDaysRemaining: number } {
+  if (trial_duration === 0) {
+    return { isInTrial: false, trialEndDate: "", trialDaysRemaining: 0 };
+  }
+
+  const trialEndTimestamp = last_charged + trial_duration;
+  const now = Math.floor(Date.now() / 1000);
+  const isInTrial = now < trialEndTimestamp;
+  const trialEndDate = new Date(trialEndTimestamp * 1000).toLocaleDateString();
+  const trialDaysRemaining = Math.max(
+    0,
+    Math.ceil((trialEndTimestamp - now) / (24 * 60 * 60))
+  );
+
+  return { isInTrial, trialEndDate, trialDaysRemaining };
+}
+
 export default function SubscriptionCard({
   subscription,
+  userKey,
   onCancel,
+  onPause,
+  onRefresh,
 }: SubscriptionCardProps) {
   const { merchant, amount, interval, last_charged, active } = subscription;
   const nextChargeTimestamp = last_charged + interval;
@@ -37,7 +62,7 @@ export default function SubscriptionCard({
           )}
         </div>
         <span className={`badge ${active ? "badge-active" : "badge-inactive"}`}>
-          {active ? "Active" : "Cancelled"}
+          {active ? (isInTrial ? "Trial Active" : "Active") : "Cancelled"}
         </span>
       </div>
 
@@ -65,10 +90,55 @@ export default function SubscriptionCard({
         </div>
       </div>
 
-      {active && (
-        <button onClick={onCancel} className="btn-danger cancel-btn">
-          Cancel Subscription
-        </button>
+      <div className="subscription-card__actions">
+        {active && !paused && (
+          <>
+            <button onClick={() => setShowPauseConfirm(true)} className="btn-secondary pause-btn">
+              Pause
+            </button>
+            <button onClick={onCancel} className="btn-danger cancel-btn">
+              Cancel
+            </button>
+          </>
+        )}
+        {active && paused && (
+          <>
+            <button onClick={handleResume} disabled={resumeLoading} className="btn-primary resume-btn">
+              {resumeLoading ? "Resuming…" : "Resume"}
+            </button>
+            <button onClick={onCancel} className="btn-danger cancel-btn">
+              Cancel
+            </button>
+          </>
+        )}
+      </div>
+
+      {showPauseConfirm && (
+        <div className="modal-overlay" onClick={() => setShowPauseConfirm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Pause subscription?</h3>
+            <p>You won't be charged while paused. You can resume anytime.</p>
+            <div className="modal-actions">
+              <button onClick={() => setShowPauseConfirm(false)} className="btn-secondary">
+                Cancel
+              </button>
+              <button onClick={handlePause} disabled={pauseLoading} className="btn-primary">
+                {pauseLoading ? "Pausing…" : "Pause"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pauseStatus && (
+        <p
+          className="form-status"
+          style={{
+            color: pauseStatus.startsWith("Error") ? "var(--color-danger)" : "var(--color-success)",
+          }}
+        >
+          {pauseStatus}
+        </p>
       )}
     </div>
   );
