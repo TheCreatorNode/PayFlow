@@ -28,6 +28,9 @@ export const NETWORK_PASSPHRASE =
 export const CONTRACT_ID = import.meta.env.VITE_CONTRACT_ID ?? "";
 export const TOKEN_CONTRACT_ID = import.meta.env.VITE_TOKEN_CONTRACT_ID ?? "";
 
+// Default token address (XLM) - replace with your actual token
+export const DEFAULT_TOKEN = import.meta.env.VITE_DEFAULT_TOKEN ?? "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+
 export const server = new Server(RPC_URL);
 
 export interface MerchantSubscriber {
@@ -225,6 +228,7 @@ export async function getSubscription(user: string): Promise<Subscription | null
         break;
       case "interval":
       case "last_charged":
+      case "trial_duration":
         fields[key] = Number(val.u64());
         break;
       case "active":

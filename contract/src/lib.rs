@@ -144,6 +144,7 @@ impl FlowPay {
             token,
             referrer,
             label,
+            trial_duration,
         };
 
         env.storage()
