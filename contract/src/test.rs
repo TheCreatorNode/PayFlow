@@ -768,6 +768,69 @@ fn test_upgrade_event_emitted() {
 }
 
 // ─────────────────────────────────────────────
+// Issue: per-merchant subscriber count tests
+// ─────────────────────────────────────────────
+
+#[test]
+fn test_merchant_subscriber_count_increments_on_subscribe() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_merchant_subscriber_count(&merchant), 0);
+    client.subscribe(&user, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
+    assert_eq!(client.get_merchant_subscriber_count(&merchant), 1);
+}
+
+#[test]
+fn test_merchant_subscriber_count_decrements_on_cancel() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    client.subscribe(&user, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
+    assert_eq!(client.get_merchant_subscriber_count(&merchant), 1);
+    client.cancel(&user);
+    assert_eq!(client.get_merchant_subscriber_count(&merchant), 0);
+}
+
+#[test]
+fn test_merchant_subscriber_count_multiple_users() {
+    let (env, contract_id, token_addr, user_a, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let user_b = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_addr);
+    sac.mint(&user_b, &10_000_0000000);
+    let token = TokenClient::new(&env, &token_addr);
+    token.approve(&user_b, &contract_id, &10_000_0000000, &200);
+
+    client.subscribe(&user_a, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
+    client.subscribe(&user_b, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
+    assert_eq!(client.get_merchant_subscriber_count(&merchant), 2);
+
+    client.cancel(&user_a);
+    assert_eq!(client.get_merchant_subscriber_count(&merchant), 1);
+}
+
+#[test]
+fn test_merchant_subscriber_count_isolated_per_merchant() {
+    let (env, contract_id, token_addr, user_a, merchant_a) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let user_b = Address::generate(&env);
+    let merchant_b = Address::generate(&env);
+    let sac = StellarAssetClient::new(&env, &token_addr);
+    sac.mint(&user_b, &10_000_0000000);
+    let token = TokenClient::new(&env, &token_addr);
+    token.approve(&user_b, &contract_id, &10_000_0000000, &200);
+
+    client.subscribe(&user_a, &merchant_a, &1_0000000, &86400, &token_addr, &None, &None);
+    client.subscribe(&user_b, &merchant_b, &1_0000000, &86400, &token_addr, &None, &None);
+
+    assert_eq!(client.get_merchant_subscriber_count(&merchant_a), 1);
+    assert_eq!(client.get_merchant_subscriber_count(&merchant_b), 1);
+}
+
+// ─────────────────────────────────────────────
 // Issue: events.rs publish helpers isolation tests
 // ─────────────────────────────────────────────
 

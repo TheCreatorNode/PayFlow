@@ -65,6 +65,8 @@ pub enum DataKey {
     ChargeHistory(Address),
     // Feature: emergency contract pause
     ContractPaused,
+    // Feature: per-merchant subscriber count
+    MerchantSubCount(Address),
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -189,6 +191,7 @@ impl FlowPay {
 
         subscription_count::increment(&env);
         referral::store_referral(&env, &user, &referrer);
+        merchant_stats::increment_subscriber_count(&env, &sub.merchant);
         events::publish_subscribed(&env, &user, &sub);
     }
 
@@ -363,6 +366,7 @@ impl FlowPay {
         env.storage().persistent().set(&key, &sub);
 
         subscription_count::decrement(&env);
+        merchant_stats::decrement_subscriber_count(&env, &sub.merchant);
         events::publish_cancelled(&env, &user);
     }
 
@@ -593,6 +597,11 @@ impl FlowPay {
     /// Oldest -> newest.
     pub fn get_merchant_revenue_history(env: Env, merchant: Address, days: u32) -> Vec<i128> {
         merchant_stats::get_merchant_revenue_history(&env, &merchant, days)
+    }
+
+    /// Returns the number of active subscribers for a given merchant.
+    pub fn get_merchant_subscriber_count(env: Env, merchant: Address) -> u64 {
+        merchant_stats::get_merchant_subscriber_count(&env, &merchant)
     }
 
     // ─────────────────────────────────────────────────────────────
