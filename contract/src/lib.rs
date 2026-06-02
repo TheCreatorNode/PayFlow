@@ -2,6 +2,7 @@
 
 mod admin;
 mod batch;
+#[cfg(test)]
 mod bench;
 mod errors;
 mod events;
@@ -382,12 +383,12 @@ impl FlowPay {
             .get(&key)
             .expect("no subscription found");
 
-        sub.active = false;
-
-        env.storage().persistent().set(&key, &sub);
-
-        subscription_count::decrement(&env);
-        events::publish_cancelled(&env, &user);
+        if sub.active {
+            sub.active = false;
+            env.storage().persistent().set(&key, &sub);
+            subscription_count::decrement(&env);
+            events::publish_cancelled(&env, &user);
+        }
     }
 
     /// Pauses `user`'s subscription without cancelling it.
@@ -548,12 +549,6 @@ impl FlowPay {
     /// Returns the trial end timestamp if the user is in a trial period.
     pub fn get_trial_end(env: Env, user: Address) -> Option<u64> {
         trial::get_trial_end(env, user)
-    }
-
-    /// Returns the contract-wide grace period in seconds.
-    /// Returns 0 if no grace period has been set.
-    pub fn get_grace_period(env: Env) -> u64 {
-        grace::get_grace_period(&env)
     }
 
     /// Sets the contract-wide grace period for charges.
@@ -720,12 +715,7 @@ impl FlowPay {
 
     /// Returns a paginated slice of charge timestamps for a subscriber.
     /// limit is capped at 12.
-    pub fn get_charge_history_page(
-        env: Env,
-        user: Address,
-        offset: u32,
-        limit: u32,
-    ) -> Vec<u64> {
+    pub fn get_charge_history_page(env: Env, user: Address, offset: u32, limit: u32) -> Vec<u64> {
         subscription_history::get_charge_history_page(&env, &user, offset, limit)
     }
 }
@@ -748,4 +738,3 @@ fn is_contract_paused(env: &Env) -> bool {
 fn ensure_contract_not_paused(env: &Env) {
     assert!(!is_contract_paused(env), "contract is paused");
 }
-
