@@ -76,6 +76,7 @@ pub enum DataKey {
 
 pub const SUBSCRIPTION_TTL_LEDGERS: u32 = 6307200; // ~1 year (assuming 5s blocks)
 pub const MAX_AMOUNT: i128 = 100_000_000_000;
+pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 1_000_000_0000000;
 
 // ─────────────────────────────────────────────────────────────
 // Data types
@@ -162,7 +163,15 @@ impl FlowPay {
         }
 
         assert!(amount > 0, "amount must be positive");
-        assert!(interval > 0, "interval must be positive");
+        if amount > MAX_SUBSCRIPTION_AMOUNT {
+            env.panic_with_error(ContractError::AmountTooLarge);
+        }
+        if interval == 0 {
+            env.panic_with_error(ContractError::IntervalMustBePositive);
+        }
+        if interval < 60 {
+            env.panic_with_error(ContractError::IntervalTooShort);
+        }
 
         use soroban_sdk::xdr::ToXdr;
         if token.clone().to_xdr(&env).get(7) == Some(0) {

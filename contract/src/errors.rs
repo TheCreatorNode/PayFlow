@@ -26,4 +26,8 @@ pub enum ContractError {
     MerchantNotWhitelisted = 10,
     /// Returned when a user attempts to refer themselves
     SelfReferral = 11,
+    /// Returned when a requested subscription interval is shorter than the minimum allowed duration
+    IntervalTooShort = 12,
+    /// Returned when a requested subscription amount exceeds the maximum allowed cap
+    AmountTooLarge = 13,
 }
