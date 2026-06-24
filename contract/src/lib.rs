@@ -179,6 +179,7 @@ impl FlowPay {
             env.panic_with_error(ContractError::InvalidTokenAddress);
         }
 
+        validation::check_allowance(&env, &user, &token, amount);
         if interval < 60 {
             env.panic_with_error(ContractError::IntervalTooShort);
         }
@@ -622,6 +623,104 @@ impl FlowPay {
         grace::get_grace_period(&env)
     }
 
+    /// Updates the recurring charge amount for `user`'s subscription.
+    ///
+    /// # Parameters
+    ///
+    /// - `user`: Subscriber whose subscription amount should be adjusted.
+    /// - `new_amount`: Replacement amount for future charges. Must be positive
+    ///   and must not exceed `MAX_SUBSCRIPTION_AMOUNT`.
+    ///
+    /// # Returns
+    ///
+    /// Returns nothing.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorization from the contract admin.
+    ///
+    /// # Errors
+    ///
+    /// Panics if the contract is paused, no subscription exists for `user`,
+    /// or `new_amount` fails amount validation.
+    ///
+    /// # Side Effects
+    ///
+    /// Overwrites the subscription's `amount` field in persistent storage,
+    /// refreshes its TTL, and emits `sub_amount_updated`.
+    pub fn set_subscription_amount(env: Env, user: Address, new_amount: i128) {
+        ensure_contract_not_paused(&env);
+        admin::require_admin(&env);
+
+        let key = DataKey::Subscription(user.clone());
+
+        let mut sub: Subscription = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
+
+        validation::require_valid_amount(&env, new_amount);
+
+        let old_amount = sub.amount;
+        sub.amount = new_amount;
+
+        env.storage().persistent().set(&key, &sub);
+        extend_subscription_ttl(&env, &user);
+
+        events::publish_subscription_amount_updated(&env, &user, old_amount, new_amount);
+    }
+
+    /// Updates the billing interval for `user`'s subscription.
+    ///
+    /// # Parameters
+    ///
+    /// - `user`: Subscriber whose subscription interval should be adjusted.
+    /// - `new_interval`: Replacement interval in seconds. Must be strictly
+    ///   greater than zero.
+    ///
+    /// # Returns
+    ///
+    /// Returns nothing.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorization from the contract admin.
+    ///
+    /// # Errors
+    ///
+    /// Panics if the contract is paused, no subscription exists for `user`,
+    /// or `new_interval` is zero (`ContractError::IntervalTooShort`).
+    ///
+    /// # Side Effects
+    ///
+    /// Overwrites the subscription's `interval` field in persistent storage,
+    /// refreshes its TTL, and emits `sub_interval_updated`. The change takes
+    /// effect immediately: `next_charge_at` will return
+    /// `last_charged + new_interval` after this call.
+    pub fn set_subscription_interval(env: Env, user: Address, new_interval: u64) {
+        ensure_contract_not_paused(&env);
+        admin::require_admin(&env);
+
+        let key = DataKey::Subscription(user.clone());
+
+        let mut sub: Subscription = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
+
+        validation::require_valid_interval(&env, new_interval);
+
+        let old_interval = sub.interval;
+        sub.interval = new_interval;
+
+        env.storage().persistent().set(&key, &sub);
+        extend_subscription_ttl(&env, &user);
+
+        events::publish_subscription_interval_updated(&env, &user, old_interval, new_interval);
+    }
+
     /// Adds a merchant to the whitelist.
     pub fn add_merchant(env: Env, merchant: Address) {
         admin::require_admin(&env);
@@ -712,6 +811,53 @@ impl FlowPay {
     pub fn reset_merchant_revenue(env: Env, merchant: Address) {
         admin::require_admin(&env);
         merchant_stats::reset_merchant_revenue(&env, &merchant);
+    }
+
+    /// Withdraws the merchant's accrued revenue from the contract balance
+    /// to their address.
+    ///
+    /// # Parameters
+    ///
+    /// - `merchant`: The merchant address. Must authorize the call.
+    ///
+    /// # Returns
+    ///
+    /// Returns nothing.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorization from `merchant`.
+    ///
+    /// # Errors
+    ///
+    /// Panics if the contract is paused, the global token is not configured,
+    /// or the tracked accrued balance is zero or negative
+    /// (`ContractError::ZeroBalanceAvailable`).
+    ///
+    /// # Side Effects
+    ///
+    /// Resets the `MerchantRevenue` counter to zero before transferring
+    /// (reentrancy safety), then transfers tokens from the contract account
+    /// to `merchant` and emits `merchant_withdrawal`.
+    pub fn withdraw_merchant_revenue(env: Env, merchant: Address) {
+        ensure_contract_not_paused(&env);
+        merchant.require_auth();
+
+        let token_addr = storage::get_token(&env)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NotInitialized));
+
+        let amount = merchant_stats::get_merchant_revenue(&env, &merchant);
+        if amount <= 0 {
+            env.panic_with_error(ContractError::ZeroBalanceAvailable);
+        }
+
+        // Reset before transfer to guard against reentrancy.
+        merchant_stats::reset_merchant_revenue(&env, &merchant);
+
+        let token_client = token::Client::new(&env, &token_addr);
+        token_client.transfer(&env.current_contract_address(), &merchant, &amount);
+
+        events::publish_merchant_withdrawal(&env, &merchant, amount);
     }
 
     // ─────────────────────────────────────────────────────────────
