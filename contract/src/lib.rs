@@ -11,6 +11,7 @@ mod fee;
 mod grace;
 mod merchant_stats;
 mod migration;
+mod min_interval;
 mod referral;
 mod spending_limit;
 mod storage;
@@ -66,6 +67,15 @@ pub enum DataKey {
     SubscriptionMeta(Address),
     // Feature: charge history
     ChargeHistory(Address),
+    // Feature: contract-level pause
+    ContractPaused,
+    // Feature: minimum subscription interval floor
+    MinInterval,
+    // Feature: consolidated merchant revenue history (Vec<i128>)
+    MerchantRevenueHistory(Address),
+    // Feature: subscriber index (append-only log)
+    SubscriberIndex(u64),
+    SubscriberIndexSize,
     // Feature: emergency contract pause
     ContractPaused,
     // Feature: per-merchant subscriber count
@@ -99,6 +109,18 @@ pub struct Subscription {
     pub referrer: Option<Address>, // optional referral address
     pub label: Symbol,             // user-assigned label for this subscription
     pub trial_duration: u64,       // optional trial duration in seconds
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct HealthReport {
+    pub is_healthy: bool,
+    pub contract_paused: bool,
+    pub token_configured: bool,
+    pub admin_configured: bool,
+    pub instance_ttl_ledgers: u32,
+    pub active_subscription_count: u64,
+    pub schema_version: u32,
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -180,10 +202,26 @@ impl FlowPay {
         }
 
         validation::check_allowance(&env, &user, &token, amount);
+        if interval < 60 {
+            env.panic_with_error(ContractError::IntervalTooShort);
+        }
+
+        if interval < min_interval::get_min_interval(&env) {
+            env.panic_with_error(ContractError::IntervalTooShort);
+        }
+
+        let token_client = token::Client::new(&env, &token);
+        let allowance = token_client.allowance(&user, &env.current_contract_address());
+        if allowance < amount {
+            env.panic_with_error(ContractError::InsufficientAllowance);
+        }
 
         let now = env.ledger().timestamp();
         let trial_duration = trial_period.unwrap_or(0);
         let last_charged = now + trial_duration;
+
+        let existing = storage::get_subscription(&env, &user);
+        let should_increment = existing.as_ref().map_or(true, |s| !s.active);
 
         let sub = Subscription {
             merchant,
@@ -216,6 +254,7 @@ impl FlowPay {
 
         if should_increment {
             subscription_count::increment(&env);
+            subscription_count::append_subscriber_index(&env, &user);
         }
         referral::store_referral(&env, &user, &referrer);
         merchant_stats::increment_subscriber_count(&env, &sub.merchant);
@@ -267,12 +306,15 @@ impl FlowPay {
 
         let now = env.ledger().timestamp();
 
-        if now < sub.last_charged + sub.interval {
+        let next = charge_exec::compute_next_charge_at(&sub)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::SubscriptionPaused));
+
+        if now < next {
             env.panic_with_error(ContractError::IntervalNotElapsed);
         }
 
         let grace_period = grace::get_grace_period(&env);
-        if grace_period > 0 && now > sub.last_charged + sub.interval + grace_period {
+        if grace_period > 0 && now > next + grace_period {
             env.panic_with_error(ContractError::GracePeriodElapsed);
         }
 
@@ -558,18 +600,39 @@ impl FlowPay {
 
     /// Returns the Unix timestamp of the next scheduled charge for a user.
     ///
-    /// Returns `None` if:
-    /// - No subscription exists for the user
-    /// - The subscription is inactive (cancelled)
-    ///
-    /// Returns `Some(last_charged + interval)` if the subscription is active.
+    /// Returns `None` if no subscription exists, the subscription is inactive,
+    /// or the subscription is paused.
     pub fn next_charge_at(env: Env, user: Address) -> Option<u64> {
         let sub = storage::get_subscription(&env, &user)?;
-        if !sub.active {
-            None
-        } else {
-            Some(sub.last_charged + sub.interval)
+        charge_exec::compute_next_charge_at(&sub)
+    }
+
+    /// Returns `true` when `user` has a charge due right now.
+    ///
+    /// A charge is due when:
+    /// - The subscription is active and not paused
+    /// - `now >= next_charge_at` (interval has elapsed)
+    /// - `now <= next_charge_at + grace_period` (still within grace window, or no grace period set)
+    ///
+    /// No auth required.
+    pub fn is_charge_due(env: Env, user: Address) -> bool {
+        let sub = match storage::get_subscription(&env, &user) {
+            Some(s) => s,
+            None => return false,
+        };
+        let next = match charge_exec::compute_next_charge_at(&sub) {
+            Some(n) => n,
+            None => return false,
+        };
+        let now = env.ledger().timestamp();
+        if now < next {
+            return false;
         }
+        let grace = grace::get_grace_period(&env);
+        if grace > 0 && now > next + grace {
+            return false;
+        }
+        true
     }
 
     /// Returns the trial end timestamp if the user is in a trial period.
@@ -638,6 +701,71 @@ impl FlowPay {
         events::publish_subscription_amount_updated(&env, &user, old_amount, new_amount);
     }
 
+    /// Updates the billing interval for `user`'s subscription.
+    ///
+    /// # Parameters
+    ///
+    /// - `user`: Subscriber whose subscription interval should be adjusted.
+    /// - `new_interval`: Replacement interval in seconds. Must be strictly
+    ///   greater than zero.
+    ///
+    /// # Returns
+    ///
+    /// Returns nothing.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorization from the contract admin.
+    ///
+    /// # Errors
+    ///
+    /// Panics if the contract is paused, no subscription exists for `user`,
+    /// or `new_interval` is zero (`ContractError::IntervalTooShort`).
+    ///
+    /// # Side Effects
+    ///
+    /// Overwrites the subscription's `interval` field in persistent storage,
+    /// refreshes its TTL, and emits `sub_interval_updated`. The change takes
+    /// effect immediately: `next_charge_at` will return
+    /// `last_charged + new_interval` after this call.
+    pub fn set_subscription_interval(env: Env, user: Address, new_interval: u64) {
+        ensure_contract_not_paused(&env);
+        admin::require_admin(&env);
+
+        let key = DataKey::Subscription(user.clone());
+
+        let mut sub: Subscription = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
+
+        validation::require_valid_interval(&env, new_interval);
+
+        let old_interval = sub.interval;
+        sub.interval = new_interval;
+
+        env.storage().persistent().set(&key, &sub);
+        extend_subscription_ttl(&env, &user);
+
+        events::publish_subscription_interval_updated(&env, &user, old_interval, new_interval);
+    }
+
+    /// Sets the minimum allowed subscription interval in seconds.
+    /// Only the contract admin can call this. Panics if seconds == 0.
+    pub fn set_min_interval(env: Env, seconds: u64) {
+        assert!(seconds > 0, "min interval must be positive");
+        admin::require_admin(&env);
+        min_interval::set_min_interval(&env, seconds);
+        events::publish_min_interval_updated(&env, seconds);
+    }
+
+    /// Returns the minimum allowed subscription interval in seconds.
+    /// Defaults to 3600 (1 hour) when unset.
+    pub fn get_min_interval(env: Env) -> u64 {
+        min_interval::get_min_interval(&env)
+    }
+
     /// Adds a merchant to the whitelist.
     pub fn add_merchant(env: Env, merchant: Address) {
         admin::require_admin(&env);
@@ -703,6 +831,46 @@ impl FlowPay {
     }
 
     // ─────────────────────────────────────────────────────────────
+    // Subscriber index
+    // ─────────────────────────────────────────────────────────────
+
+    /// Returns the total number of unique subscribers ever recorded (append-only count).
+    pub fn get_subscriber_count(env: Env) -> u64 {
+        subscription_count::get_subscriber_index_size(&env)
+    }
+
+    /// Returns the subscriber address at the given index slot, or `None` if out of range.
+    pub fn get_subscriber_at(env: Env, index: u64) -> Option<Address> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::SubscriberIndex(index))
+    }
+
+    /// Returns a page of subscriber addresses starting at `offset`, capped at 50 per call.
+    /// Returns an empty Vec when `offset >= count` or `limit == 0`.
+    pub fn get_subscriber_page(env: Env, offset: u64, limit: u32) -> Vec<Address> {
+        let count = subscription_count::get_subscriber_index_size(&env);
+        let cap: u32 = if limit > 50 { 50 } else { limit };
+        let mut result = Vec::new(&env);
+        if offset >= count || cap == 0 {
+            return result;
+        }
+        let mut i = offset;
+        let end = offset + cap as u64;
+        while i < end && i < count {
+            if let Some(addr) = env
+                .storage()
+                .persistent()
+                .get(&DataKey::SubscriberIndex(i))
+            {
+                result.push_back(addr);
+            }
+            i += 1;
+        }
+        result
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // Merchant revenue
     // ─────────────────────────────────────────────────────────────
 
@@ -712,12 +880,19 @@ impl FlowPay {
         merchant_stats::get_merchant_revenue(&env, &merchant)
     }
 
-    /// Returns per-day revenue for the given merchant for the last `days` days.
-    /// Oldest -> newest.
+    /// Returns per-charge revenue entries for the merchant (up to `days` most recent).
+    /// Oldest -> newest. Returns an empty Vec when no history has been recorded or after clearing.
     pub fn get_merchant_revenue_history(env: Env, merchant: Address, days: u32) -> Vec<i128> {
         merchant_stats::get_merchant_revenue_history(&env, &merchant, days)
     }
 
+    /// Clears the merchant's revenue history Vec from persistent storage.
+    /// Only the contract admin can call this. Idempotent — safe to call when no history exists.
+    /// Does not affect the cumulative revenue total.
+    pub fn clear_merchant_revenue_history(env: Env, merchant: Address) {
+        admin::require_admin(&env);
+        merchant_stats::clear_revenue_history(&env, &merchant);
+        events::publish_merchant_history_cleared(&env, &merchant);
     /// Returns the number of active subscribers for a given merchant.
     pub fn get_merchant_subscriber_count(env: Env, merchant: Address) -> u64 {
         merchant_stats::get_merchant_subscriber_count(&env, &merchant)
@@ -728,6 +903,53 @@ impl FlowPay {
     pub fn reset_merchant_revenue(env: Env, merchant: Address) {
         admin::require_admin(&env);
         merchant_stats::reset_merchant_revenue(&env, &merchant);
+    }
+
+    /// Withdraws the merchant's accrued revenue from the contract balance
+    /// to their address.
+    ///
+    /// # Parameters
+    ///
+    /// - `merchant`: The merchant address. Must authorize the call.
+    ///
+    /// # Returns
+    ///
+    /// Returns nothing.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorization from `merchant`.
+    ///
+    /// # Errors
+    ///
+    /// Panics if the contract is paused, the global token is not configured,
+    /// or the tracked accrued balance is zero or negative
+    /// (`ContractError::ZeroBalanceAvailable`).
+    ///
+    /// # Side Effects
+    ///
+    /// Resets the `MerchantRevenue` counter to zero before transferring
+    /// (reentrancy safety), then transfers tokens from the contract account
+    /// to `merchant` and emits `merchant_withdrawal`.
+    pub fn withdraw_merchant_revenue(env: Env, merchant: Address) {
+        ensure_contract_not_paused(&env);
+        merchant.require_auth();
+
+        let token_addr = storage::get_token(&env)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NotInitialized));
+
+        let amount = merchant_stats::get_merchant_revenue(&env, &merchant);
+        if amount <= 0 {
+            env.panic_with_error(ContractError::ZeroBalanceAvailable);
+        }
+
+        // Reset before transfer to guard against reentrancy.
+        merchant_stats::reset_merchant_revenue(&env, &merchant);
+
+        let token_client = token::Client::new(&env, &token_addr);
+        token_client.transfer(&env.current_contract_address(), &merchant, &amount);
+
+        events::publish_merchant_withdrawal(&env, &merchant, amount);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -745,6 +967,7 @@ impl FlowPay {
         events::publish_daily_limit_set(&env, &user, limit);
     }
 
+    /// Returns the daily spending limit for a user, or `None` if not set.
     /// Removes the caller's daily spending cap for `pay_per_use()`.
     pub fn remove_daily_limit(env: Env, user: Address) {
         user.require_auth();
@@ -757,6 +980,7 @@ impl FlowPay {
         spending_limit::get_daily_limit(&env, &user)
     }
 
+    // ─────────────────────────────────────────────────────────────
     /// Returns the amount spent so far today via `pay_per_use()` for the caller.
     pub fn get_daily_spent(env: Env, user: Address) -> i128 {
         spending_limit::get_daily_spent(&env, &user)
@@ -819,6 +1043,62 @@ impl FlowPay {
         subscription_history::get_charge_history(&env, &user)
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Admin setup
+    // ─────────────────────────────────────────────────────────────
+
+    /// Sets the contract admin. Can only be called once; subsequent calls panic.
+    pub fn set_initial_admin(env: Env, admin: Address) {
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic!("admin already set");
+        }
+        storage::set_admin(&env, &admin);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Contract pause
+    // ─────────────────────────────────────────────────────────────
+
+    /// Pauses the contract. Only the admin can call this.
+    pub fn pause_contract(env: Env) {
+        admin::require_admin(&env);
+        storage::set_contract_paused(&env, true);
+    }
+
+    /// Unpauses the contract. Only the admin can call this.
+    pub fn unpause_contract(env: Env) {
+        admin::require_admin(&env);
+        storage::set_contract_paused(&env, false);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Health check
+    // ─────────────────────────────────────────────────────────────
+
+    /// Returns a snapshot of contract health. Safe to call at any time — no auth required, no storage writes.
+    pub fn contract_health_check(env: Env) -> HealthReport {
+        let contract_paused = storage::is_contract_paused(&env);
+        let token_configured = storage::get_token(&env).is_some();
+        let admin_configured = storage::get_admin_optional(&env).is_some();
+        let instance_ttl_ledgers = env.storage().instance().get_ttl();
+        let active_subscription_count = subscription_count::get_active_count(&env);
+        let schema_version = migration::get_schema_version(&env);
+
+        // Healthy when not paused, fully configured, and at least 1 day of TTL remaining (17_280 ledgers at ~5 s/ledger)
+        let is_healthy = !contract_paused
+            && token_configured
+            && admin_configured
+            && instance_ttl_ledgers > 17_280;
+
+        HealthReport {
+            is_healthy,
+            contract_paused,
+            token_configured,
+            admin_configured,
+            instance_ttl_ledgers,
+            active_subscription_count,
+            schema_version,
+        }
     /// Clears the charge history for a subscriber.
     pub fn clear_charge_history(env: Env, user: Address) {
         user.require_auth();

@@ -36,6 +36,15 @@ pub fn require_valid_amount(env: &Env, new_amount: i128) {
     }
 }
 
+/// Validates that `new_interval` is a legal subscription interval: must be
+/// strictly greater than zero. Panics with `ContractError::IntervalTooShort`
+/// if the floor is not met.
+pub fn require_valid_interval(env: &Env, new_interval: u64) {
+    if new_interval == 0 {
+        env.panic_with_error(ContractError::IntervalTooShort);
+    }
+}
+
 pub fn require_positive_amount(amount: i128) {
     assert!(amount > 0, "amount must be positive");
 }
@@ -57,45 +66,64 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_require_positive_amount_positive() {
+        require_positive_amount(1);
+        require_positive_amount(100);
     fn test_require_positive_amount_accepts_positive() {
         require_positive_amount(1);
     }
 
     #[test]
     #[should_panic(expected = "amount must be positive")]
+    fn test_require_positive_amount_negative() {
     fn test_require_positive_amount_panics_on_zero() {
         require_positive_amount(0);
     }
 
     #[test]
+    #[should_panic(expected = "amount must be positive")]
+    fn test_require_positive_amount_negative_signed() {
+        require_positive_amount(-5);
+    }
+
+    #[test]
+    fn test_require_positive_interval_positive() {
+        require_positive_interval(1);
     fn test_require_positive_interval_accepts_positive() {
         require_positive_interval(60);
     }
 
     #[test]
     #[should_panic(expected = "interval must be positive")]
+    fn test_require_positive_interval_negative() {
     fn test_require_positive_interval_panics_on_zero() {
         require_positive_interval(0);
     }
 
     #[test]
+    fn test_require_active_subscription_positive() {
     fn test_require_active_subscription_accepts_true() {
         require_active_subscription(true);
     }
 
     #[test]
     #[should_panic(expected = "subscription is not active")]
+    fn test_require_active_subscription_negative() {
     fn test_require_active_subscription_panics_on_false() {
         require_active_subscription(false);
     }
 
     #[test]
+    fn test_require_charge_interval_elapsed_positive() {
+        require_charge_interval_elapsed(100, 40, 60);
+        require_charge_interval_elapsed(150, 40, 60);
     fn test_require_charge_interval_elapsed_accepts_elapsed_interval() {
         require_charge_interval_elapsed(100, 40, 60);
     }
 
     #[test]
     #[should_panic(expected = "interval not elapsed yet")]
+    fn test_require_charge_interval_elapsed_negative() {
     fn test_require_charge_interval_elapsed_panics_if_too_early() {
         require_charge_interval_elapsed(99, 40, 60);
     }
