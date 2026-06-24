@@ -179,6 +179,10 @@ impl FlowPay {
             env.panic_with_error(ContractError::InvalidTokenAddress);
         }
 
+        if interval < 60 {
+            env.panic_with_error(ContractError::IntervalTooShort);
+        }
+
         let token_client = token::Client::new(&env, &token);
         let allowance = token_client.allowance(&user, &env.current_contract_address());
         if allowance < amount {
@@ -701,6 +705,7 @@ impl FlowPay {
         events::publish_daily_limit_set(&env, &user, limit);
     }
 
+    /// Returns the daily spending limit for a user, or `None` if not set.
     /// Removes the caller's daily spending cap for `pay_per_use()`.
     pub fn remove_daily_limit(env: Env, user: Address) {
         user.require_auth();
@@ -713,6 +718,7 @@ impl FlowPay {
         spending_limit::get_daily_limit(&env, &user)
     }
 
+    // ─────────────────────────────────────────────────────────────
     /// Returns the amount spent so far today via `pay_per_use()` for the caller.
     pub fn get_daily_spent(env: Env, user: Address) -> i128 {
         spending_limit::get_daily_spent(&env, &user)
