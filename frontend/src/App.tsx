@@ -14,6 +14,7 @@ import { useAnalytics } from "./hooks/useAnalytics";
 import SubscribeForm from "./components/SubscribeForm";
 import Dashboard from "./components/Dashboard";
 import MerchantDashboard from "./components/MerchantDashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 import TabBar from "./components/TabBar";
 import ConnectWallet from "./components/ConnectWallet";
 import WalletBar from "./components/WalletBar";
@@ -96,13 +97,14 @@ export default function App() {
   const { isMobile } = useResponsive();
   const { announcement, announce } = useAccessibility();
   const { count: subscriberCount, loading: subscriberCountLoading } = useSubscriberCount();
-  const [tab, setTab] = useLocalStorage<"subscribe" | "dashboard" | "merchant">("flowpay_tab", "dashboard");
+  const [tab, setTab] = useLocalStorage<"subscribe" | "dashboard" | "merchant" | "admin">("flowpay_tab", "dashboard");
   const [refresh, setRefresh] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const { isOptedIn: analyticsEnabled, setOptIn: setAnalyticsOptIn, track } = useAnalytics();
   const subscribeErrorBoundaryRef = useRef<ErrorBoundary>(null);
   const dashboardErrorBoundaryRef = useRef<ErrorBoundary>(null);
   const merchantErrorBoundaryRef = useRef<ErrorBoundary>(null);
+  const adminErrorBoundaryRef = useRef<ErrorBoundary>(null);
 
   // Keyboard shortcuts
   const shortcuts = useKeyboardShortcuts({
@@ -122,6 +124,11 @@ export default function App() {
         key: "m",
         description: "Switch to Merchant",
         action: () => setTab("merchant"),
+      },
+      {
+        key: "a",
+        description: "Switch to Admin",
+        action: () => setTab("admin"),
       },
       {
         key: "?",
@@ -331,7 +338,7 @@ export default function App() {
 
           {/* Tabs */}
           <TabBar
-            tabs={["dashboard", "subscribe", "merchant"]}
+            tabs={["dashboard", "subscribe", "merchant", "admin"]}
             activeTab={tab}
             onTabChange={setTab}
           />
@@ -374,6 +381,18 @@ export default function App() {
                   onSign={signAndSubmit}
                   refreshTrigger={refresh}
                 />
+              </ErrorBoundary>
+            ) : tab === "admin" ? (
+              <ErrorBoundary
+                ref={adminErrorBoundaryRef}
+                fallback={
+                  <TabErrorFallback
+                    title="Admin Dashboard"
+                    onRetry={() => adminErrorBoundaryRef.current?.reset()}
+                  />
+                }
+              >
+                <AdminDashboard publicKey={publicKey} onSign={signAndSubmit} />
               </ErrorBoundary>
             ) : (
               <ErrorBoundary
