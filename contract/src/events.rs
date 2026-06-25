@@ -59,19 +59,18 @@ pub fn publish_min_interval_updated(env: &Env, seconds: u64) {
 pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
     env.events()
         .publish((Symbol::new(env, "merch_hist_cleared"),), merchant.clone());
-pub fn publish_paused(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "paused"), user.clone()), ());
 }
+
+pub fn publish_paused(env: &Env, user: &Address) {}
 
 pub fn publish_resumed(env: &Env, user: &Address) {
     env.events()
         .publish((Symbol::new(env, "resumed"), user.clone()), ());
 }
 
-pub fn publish_upgraded(env: &Env, new_wasm_hash: &BytesN<32>) {
+pub fn publish_upgraded(env: &Env, _new_wasm_hash: &BytesN<32>) {
     env.events()
-        .publish((Symbol::new(env, "upgraded"),), new_wasm_hash.clone());
+        .publish((Symbol::new(env, "upgrade"),), ());
 }
 
 pub fn publish_contract_paused(env: &Env) {

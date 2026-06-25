@@ -3,6 +3,7 @@
 mod admin;
 mod batch;
 #[cfg(test)]
+use soroban_sdk::testutils::storage::Instance;
 mod bench;
 mod charge_exec;
 mod errors;
@@ -76,8 +77,6 @@ pub enum DataKey {
     // Feature: subscriber index (append-only log)
     SubscriberIndex(u64),
     SubscriberIndexSize,
-    // Feature: emergency contract pause
-    ContractPaused,
     // Feature: per-merchant subscriber count
     MerchantSubCount(Address),
     // Pending admin for two-step transfer
@@ -766,10 +765,7 @@ impl FlowPay {
         min_interval::get_min_interval(&env)
     }
 
-    /// Returns the contract-wide grace period for charges.
-    pub fn get_grace_period(env: Env) -> u64 {
-        grace::get_grace_period(&env)
-    }
+
 
     /// Adds a merchant to the whitelist.
     pub fn add_merchant(env: Env, merchant: Address) {
@@ -898,6 +894,8 @@ impl FlowPay {
         admin::require_admin(&env);
         merchant_stats::clear_revenue_history(&env, &merchant);
         events::publish_merchant_history_cleared(&env, &merchant);
+    }
+
     /// Returns the number of active subscribers for a given merchant.
     pub fn get_merchant_subscriber_count(env: Env, merchant: Address) -> u64 {
         merchant_stats::get_merchant_subscriber_count(&env, &merchant)
@@ -1064,18 +1062,7 @@ impl FlowPay {
     // Contract pause
     // ─────────────────────────────────────────────────────────────
 
-    /// Pauses the contract. Only the admin can call this.
-    pub fn pause_contract(env: Env) {
-        admin::require_admin(&env);
-        storage::set_contract_paused(&env, true);
-    }
-
-    /// Unpauses the contract. Only the admin can call this.
-    pub fn unpause_contract(env: Env) {
-        admin::require_admin(&env);
-        storage::set_contract_paused(&env, false);
-    }
-
+   
     // ─────────────────────────────────────────────────────────────
     // Health check
     // ─────────────────────────────────────────────────────────────
@@ -1104,6 +1091,8 @@ impl FlowPay {
             active_subscription_count,
             schema_version,
         }
+    }
+
     /// Clears the charge history for a subscriber.
     pub fn clear_charge_history(env: Env, user: Address) {
         user.require_auth();
