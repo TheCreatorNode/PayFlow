@@ -142,7 +142,7 @@
                   }
                 },
                 {
-                  "u64": 60
+                  "u64": 3600
                 },
                 {
                   "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
@@ -452,7 +452,7 @@
                         "symbol": "interval"
                       },
                       "val": {
-                        "u64": 60
+                        "u64": 3600
                       }
                     },
                     {
@@ -1504,7 +1504,7 @@
                   }
                 },
                 {
-                  "u64": 60
+                  "u64": 3600
                 },
                 {
                   "address": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"
@@ -1663,7 +1663,7 @@
                   }
                 },
                 {
-                  "u64": 60
+                  "u64": 3600
                 }
               ]
             }
@@ -1760,7 +1760,7 @@
                     "symbol": "interval"
                   },
                   "val": {
-                    "u64": 60
+                    "u64": 3600
                   }
                 },
                 {

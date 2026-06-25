@@ -44,4 +44,6 @@ pub enum ContractError {
     IntervalTooShort = 19,
     /// Returned when a merchant attempts to withdraw with no accrued revenue
     ZeroBalanceAvailable = 20,
+    /// Returned when attempting to subscribe to a frozen merchant
+    MerchantFrozen = 22,
 }

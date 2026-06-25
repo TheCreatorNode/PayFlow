@@ -1,5 +1,5 @@
-use soroban_sdk::Env;
 use crate::{DataKey, SUBSCRIPTION_TTL_LEDGERS};
+use soroban_sdk::Env;
 
 /// Retrieves the contract-wide grace period from instance storage.
 /// Returns 0 if not set. When present, refresh the instance entry's TTL

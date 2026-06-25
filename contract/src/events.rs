@@ -129,6 +129,20 @@ pub fn publish_merchant_removed(env: &Env, merchant: &Address) {
     );
 }
 
+pub fn publish_merchant_frozen(env: &Env, merchant: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "merchant_frozen"), merchant.clone()),
+        (),
+    );
+}
+
+pub fn publish_merchant_unfrozen(env: &Env, merchant: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "merchant_unfrozen"), merchant.clone()),
+        (),
+    );
+}
+
 pub fn publish_grace_period_updated(env: &Env, seconds: u64) {
     env.events()
         .publish((Symbol::new(env, "grace_period_updated"),), seconds);
