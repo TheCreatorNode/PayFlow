@@ -1,7 +1,7 @@
-import React, { useState, forwardRef, useEffect, useMemo } from "react";
+import React, { useState, forwardRef, useMemo } from "react";
 import Spinner from "./Spinner";
-import { STROOPS_PER_XLM, MIN_STROOPS, MAX_STROOPS } from "../constants";
-import { useDebounce } from "../hooks/useDebounce";
+import { validateStroopAmount } from "../hooks/useFormValidation";
+import { CONTRACT_LIMITS } from "../constants";
 
 interface PayPerUseFormProps {
   onPay: (amount: bigint) => Promise<void>;
@@ -59,9 +59,14 @@ const PayPerUseForm = forwardRef<HTMLInputElement, PayPerUseFormProps>(
       return xlm.toFixed(7);
     };
 
+    const validationResult = useMemo(() => {
+      return validateStroopAmount(amount, CONTRACT_LIMITS.MAX_PAY_PER_USE_AMOUNT);
+    }, [amount]);
+
     async function handleSubmit() {
-      if (!convertedStroops) return;
-      await onPay(convertedStroops);
+      if (!validationResult.valid) return;
+      const stroops = BigInt(Math.round(parseFloat(amount) * 10_000_000));
+      await onPay(stroops);
       setAmount("");
       setError(null);
       setConvertedStroops(null);
@@ -93,12 +98,15 @@ const PayPerUseForm = forwardRef<HTMLInputElement, PayPerUseFormProps>(
           </div>
           <button
             onClick={handleSubmit}
-            disabled={isSubmitDisabled}
+            disabled={!validationResult.valid || loading}
             className="btn-primary ppu-card__pay-btn"
           >
             {loading ? <Spinner size="sm" /> : "Pay now"}
           </button>
         </div>
+        {validationResult.error && (
+          <span className="text-error">{validationResult.error}</span>
+        )}
       </div>
     );
   }
