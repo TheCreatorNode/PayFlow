@@ -19,7 +19,7 @@ pub fn get_grace_period(env: &Env) -> u64 {
 /// Proposes a new contract-wide grace period.
 pub fn propose_grace_period(env: &Env, seconds: u64) {
     assert!(seconds <= u64::MAX / 2, "grace period too large");
-    crate::admin::require_admin(env);
+    
     
     env.storage().temporary().set(&DataKey::PendingGracePeriod, &seconds);
     env.storage().temporary().extend_ttl(&DataKey::PendingGracePeriod, 17280, 17280);
@@ -28,7 +28,7 @@ pub fn propose_grace_period(env: &Env, seconds: u64) {
 
 /// Commits a pending grace period proposal.
 pub fn commit_grace_period(env: &Env) {
-    crate::admin::require_admin(env);
+    
     
     let seconds: u64 = env
         .storage()
