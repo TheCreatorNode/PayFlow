@@ -103,7 +103,7 @@ pub struct FlowPay;
 impl FlowPay {
     pub fn initialize(env: Env, token: Address) {
         if env.storage().instance().has(&DataKey::Token) {
-            panic!("already initialized");
+            env.panic_with_error(ContractError::AlreadyInitialized);
         }
 
         env.storage().instance().set(&DataKey::Token, &token);
@@ -157,12 +157,18 @@ impl FlowPay {
             }
         }
 
-        assert!(amount > 0, "amount must be positive");
-        assert!(interval > 0, "interval must be positive");
+        if amount <= 0 {
+            env.panic_with_error(ContractError::AmountMustBePositive);
+        }
+        if interval == 0 {
+            env.panic_with_error(ContractError::IntervalMustBePositive);
+        }
 
         let token_client = token::Client::new(&env, &token);
         let allowance = token_client.allowance(&user, &env.current_contract_address());
-        assert!(allowance >= amount, "insufficient allowance");
+        if allowance < amount {
+            env.panic_with_error(ContractError::InsufficientAllowance);
+        }
 
         let now = env.ledger().timestamp();
         let trial_duration = trial_period.unwrap_or(0);
@@ -228,8 +234,12 @@ impl FlowPay {
             .get(&key)
             .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
 
-        assert!(sub.active, "subscription is not active");
-        assert!(!sub.paused, "subscription is paused");
+        if !sub.active {
+            env.panic_with_error(ContractError::SubscriptionInactive);
+        }
+        if sub.paused {
+            env.panic_with_error(ContractError::SubscriptionInactive);
+        }
 
         let now = env.ledger().timestamp();
 
@@ -266,6 +276,13 @@ impl FlowPay {
         extend_subscription_ttl(&env, &user);
     }
 
+    /// Permissionlessly refreshes the TTL of any subscription entry.
+    /// Returns early (no-op) if no subscription exists for `user`.
+    /// No auth required — safe for keeper bots to call for dormant subscribers.
+    pub fn bump_subscription(env: Env, user: Address) {
+        extend_subscription_ttl(&env, &user);
+    }
+
     /// Executes an immediate pay-per-use charge for an active subscription.
     ///
     /// # Parameters
@@ -295,7 +312,9 @@ impl FlowPay {
         ensure_contract_not_paused(&env);
         user.require_auth();
 
-        assert!(amount > 0, "amount must be positive");
+        if amount <= 0 {
+            env.panic_with_error(ContractError::AmountMustBePositive);
+        }
 
         let key = DataKey::Subscription(user.clone());
 
@@ -303,10 +322,14 @@ impl FlowPay {
             .storage()
             .persistent()
             .get(&key)
-            .expect("no subscription found");
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
 
-        assert!(sub.active, "subscription is not active");
-        assert!(!sub.paused, "subscription is paused");
+        if !sub.active {
+            env.panic_with_error(ContractError::SubscriptionInactive);
+        }
+        if sub.paused {
+            env.panic_with_error(ContractError::SubscriptionInactive);
+        }
 
         spending_limit::enforce_limit(&env, &user, amount);
 
@@ -321,6 +344,7 @@ impl FlowPay {
 
         merchant_stats::increment_revenue_with_daily(&env, &sub.merchant, amount);
         spending_limit::record_spend(&env, &user, amount);
+        extend_subscription_ttl(&env, &user);
 
         events::publish_pay_per_use(&env, &user, &sub.merchant, amount);
     }
@@ -356,11 +380,12 @@ impl FlowPay {
             .storage()
             .persistent()
             .get(&key)
-            .expect("no subscription found");
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
 
         sub.active = false;
 
         env.storage().persistent().set(&key, &sub);
+        extend_subscription_ttl(&env, &user);
 
         subscription_count::decrement(&env);
         events::publish_cancelled(&env, &user);
@@ -396,13 +421,16 @@ impl FlowPay {
             .storage()
             .persistent()
             .get(&key)
-            .expect("no subscription found");
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
 
-        assert!(sub.active, "subscription is not active");
+        if !sub.active {
+            env.panic_with_error(ContractError::SubscriptionInactive);
+        }
 
         sub.paused = true;
 
         env.storage().persistent().set(&key, &sub);
+        extend_subscription_ttl(&env, &user);
 
         env.events()
             .publish((Symbol::new(&env, "paused"), user), ());
@@ -438,13 +466,16 @@ impl FlowPay {
             .storage()
             .persistent()
             .get(&key)
-            .expect("no subscription found");
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
 
-        assert!(sub.active, "subscription is not active");
+        if !sub.active {
+            env.panic_with_error(ContractError::SubscriptionInactive);
+        }
 
         sub.paused = false;
 
         env.storage().persistent().set(&key, &sub);
+        extend_subscription_ttl(&env, &user);
 
         env.events()
             .publish((Symbol::new(&env, "resumed"), user), ());
@@ -603,7 +634,9 @@ impl FlowPay {
     /// Stored in temporary storage; resets automatically after ~1 day.
     pub fn set_daily_limit(env: Env, user: Address, limit: i128) {
         user.require_auth();
-        assert!(limit > 0, "limit must be positive");
+        if limit <= 0 {
+            env.panic_with_error(ContractError::AmountMustBePositive);
+        }
         spending_limit::set_daily_limit(&env, &user, limit);
         events::publish_daily_limit_set(&env, &user, limit);
     }
@@ -676,11 +709,7 @@ impl FlowPay {
 }
 
 fn extend_subscription_ttl(env: &Env, user: &Address) {
-    env.storage().persistent().extend_ttl(
-        &DataKey::Subscription(user.clone()),
-        SUBSCRIPTION_TTL_LEDGERS,
-        SUBSCRIPTION_TTL_LEDGERS,
-    );
+    storage::extend_subscription_ttl(env, user);
 }
 
 fn is_contract_paused(env: &Env) -> bool {
@@ -691,5 +720,7 @@ fn is_contract_paused(env: &Env) -> bool {
 }
 
 fn ensure_contract_not_paused(env: &Env) {
-    assert!(!is_contract_paused(env), "contract is paused");
+    if is_contract_paused(env) {
+        env.panic_with_error(ContractError::ContractPaused);
+    }
 }

@@ -64,7 +64,7 @@ describe("Dashboard", () => {
   });
 
   it("shows an inline RPC warning when RPC is unhealthy", async () => {
-    vi.mocked(useRpcHealth).mockReturnValue({ healthy: false, error: "RPC down" });
+    vi.mocked(useRpcHealth).mockReturnValue({ healthy: false, circuitOpen: false, error: "RPC down" });
     setup();
 
     await waitFor(() =>

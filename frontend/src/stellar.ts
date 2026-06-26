@@ -614,3 +614,69 @@ export async function getChargeHistory(user: string): Promise<ChargeEvent[]> {
   }
 }
 
+
+export interface ContractHealthReport {
+  rpcReachable: boolean;
+  contractPaused: boolean;
+  tokenConfigured: boolean;
+  activeSubscriptions: number;
+  subscriptionTtlLedgers: number | null;
+  checkedAt: Date;
+}
+
+export async function getContractHealth(caller: string): Promise<ContractHealthReport> {
+  const report: ContractHealthReport = {
+    rpcReachable: false,
+    contractPaused: false,
+    tokenConfigured: false,
+    activeSubscriptions: 0,
+    subscriptionTtlLedgers: null,
+    checkedAt: new Date(),
+  };
+
+  try {
+    await server.getHealth();
+    report.rpcReachable = true;
+  } catch {
+    return report;
+  }
+
+  const contract = new Contract(CONTRACT_ID);
+
+  async function simCall(method: string, args: xdr.ScVal[] = []): Promise<xdr.ScVal | null> {
+    try {
+      const account = await server.getAccount(caller);
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(contract.call(method, ...args))
+        .setTimeout(30)
+        .build();
+      const result = await server.simulateTransaction(tx);
+      if ("error" in result) return null;
+      return (result as { result?: { retval?: xdr.ScVal } }).result?.retval ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Check if contract is paused
+  const pausedVal = await simCall("is_contract_paused");
+  if (pausedVal && pausedVal.switch().name !== "scvVoid") {
+    report.contractPaused = pausedVal.b?.() ?? false;
+  }
+
+  // Check token configured: get_active_count succeeds only when initialized
+  const countVal = await simCall("get_active_count");
+  if (countVal && countVal.switch().name !== "scvVoid") {
+    report.tokenConfigured = true;
+    try {
+      report.activeSubscriptions = Number(countVal.u64());
+    } catch {
+      report.activeSubscriptions = 0;
+    }
+  }
+
+  return report;
+}

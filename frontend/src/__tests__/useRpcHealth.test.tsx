@@ -147,13 +147,11 @@ describe("useRpcHealth", () => {
       });
       expect(screen.getByTestId("error")).toHaveTextContent("Network error");
 
-      // Second call succeeds
-      mockedServer.getHealth.mockResolvedValueOnce({} as any);
+      // Second call succeeds (polling will pick it up)
+      mockedServer.getHealth.mockResolvedValue({} as any);
       rerender(<Test />);
 
-      // Note: In the current implementation, useEffect only runs once on mount
-      // So state doesn't transition after component mount. This test documents the current behavior.
-      // If transition behavior is desired, the hook would need a dependency array or useCallback.
+      // State is still false until polling fires — document current behavior
       expect(screen.getByTestId("healthy")).toHaveTextContent("false");
     });
   });
@@ -169,7 +167,7 @@ describe("useRpcHealth", () => {
       });
     });
 
-    it("calls server.getHealth exactly once", async () => {
+    it("calls server.getHealth at least once on mount", async () => {
       mockedServer.getHealth.mockResolvedValue({} as any);
 
       render(<Test />);

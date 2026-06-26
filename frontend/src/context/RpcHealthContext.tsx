@@ -1,23 +1,37 @@
-import { useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { server } from "../stellar";
 
 const POLL_INTERVAL_MS = 30_000;
 const CIRCUIT_FAILURE_THRESHOLD = 3;
 
+// Backoff: 30s → 60s → 120s (capped)
 function nextInterval(failures: number): number {
   return Math.min(POLL_INTERVAL_MS * Math.pow(2, failures - 1), 120_000);
 }
 
-export interface UseRpcHealthResult {
+interface RpcHealthState {
   healthy: boolean;
   circuitOpen: boolean;
   error: string | null;
 }
 
-export function useRpcHealth(): UseRpcHealthResult {
-  const [healthy, setHealthy] = useState(true);
-  const [circuitOpen, setCircuitOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const RpcHealthContext = createContext<RpcHealthState>({
+  healthy: true,
+  circuitOpen: false,
+  error: null,
+});
+
+export function useRpcHealthContext(): RpcHealthState {
+  return useContext(RpcHealthContext);
+}
+
+export function RpcHealthProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<RpcHealthState>({
+    healthy: true,
+    circuitOpen: false,
+    error: null,
+  });
+
   const consecutiveFailures = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -29,17 +43,15 @@ export function useRpcHealth(): UseRpcHealthResult {
         await server.getHealth();
         if (cancelled) return;
         consecutiveFailures.current = 0;
-        setHealthy(true);
-        setCircuitOpen(false);
-        setError(null);
+        setState({ healthy: true, circuitOpen: false, error: null });
         timerRef.current = setTimeout(check, POLL_INTERVAL_MS);
       } catch (e: unknown) {
         if (cancelled) return;
         consecutiveFailures.current += 1;
         const failures = consecutiveFailures.current;
-        setHealthy(false);
-        setCircuitOpen(failures >= CIRCUIT_FAILURE_THRESHOLD);
-        setError(e instanceof Error ? e.message : "RPC endpoint unreachable");
+        const circuitOpen = failures >= CIRCUIT_FAILURE_THRESHOLD;
+        const error = e instanceof Error ? e.message : "RPC endpoint unreachable";
+        setState({ healthy: false, circuitOpen, error });
         timerRef.current = setTimeout(check, nextInterval(failures));
       }
     }
@@ -52,5 +64,9 @@ export function useRpcHealth(): UseRpcHealthResult {
     };
   }, []);
 
-  return { healthy, circuitOpen, error };
+  return (
+    <RpcHealthContext.Provider value={state}>
+      {children}
+    </RpcHealthContext.Provider>
+  );
 }

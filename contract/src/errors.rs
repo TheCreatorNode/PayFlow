@@ -24,4 +24,8 @@ pub enum ContractError {
     GracePeriodElapsed = 9,
     /// Returned when a merchant is not whitelisted
     MerchantNotWhitelisted = 10,
+    /// Returned when the contract is paused and a user-facing operation is attempted
+    ContractPaused = 11,
+    /// Returned when a pay_per_use call would exceed the user's daily spending limit
+    DailyLimitExceeded = 19,
 }
