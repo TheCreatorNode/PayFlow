@@ -72,6 +72,7 @@ pub enum DataKey {
 // ─────────────────────────────────────────────────────────────
 
 pub const SUBSCRIPTION_TTL_LEDGERS: u32 = 6307200; // ~1 year (assuming 5s blocks)
+pub const MAX_BATCH_PAUSE_SUBSCRIPTIONS: u32 = 25;
 
 // ─────────────────────────────────────────────────────────────
 // Data types
@@ -448,6 +449,40 @@ impl FlowPay {
 
         env.events()
             .publish((Symbol::new(&env, "resumed"), user), ());
+    }
+
+    /// Pauses up to 25 active subscriptions in a single emergency admin action.
+    ///
+    /// Missing or inactive subscriptions are skipped so a mixed batch can still
+    /// process every valid account. Already-paused subscriptions are treated as
+    /// no-ops, but their TTL is refreshed to preserve idempotency.
+    pub fn batch_pause_subscriptions(env: Env, users: Vec<Address>) {
+        admin::require_admin(&env);
+        assert!(
+            users.len() <= MAX_BATCH_PAUSE_SUBSCRIPTIONS,
+            "batch size exceeds maximum"
+        );
+
+        for user in users.iter() {
+            let key = DataKey::Subscription(user.clone());
+            let sub_opt: Option<Subscription> = env.storage().persistent().get(&key);
+
+            if let Some(mut sub) = sub_opt {
+                if !sub.active {
+                    continue;
+                }
+
+                let was_paused = sub.paused;
+                sub.paused = true;
+
+                env.storage().persistent().set(&key, &sub);
+                extend_subscription_ttl(&env, &user);
+
+                if !was_paused {
+                    events::publish_subscription_paused(&env, &user);
+                }
+            }
+        }
     }
 
     /// Pauses all user-facing payment operations for the contract.

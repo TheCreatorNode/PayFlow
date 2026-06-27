@@ -52,3 +52,8 @@ pub fn publish_daily_limit_removed(env: &Env, user: &Address) {
     env.events()
         .publish((Symbol::new(env, "daily_limit_removed"), user.clone()), ());
 }
+
+pub fn publish_subscription_paused(env: &Env, user: &Address) {
+    env.events()
+        .publish((Symbol::new(env, "subscription_paused"), user.clone()), ());
+}
