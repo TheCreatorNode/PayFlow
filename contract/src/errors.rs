@@ -49,6 +49,8 @@ pub enum ContractError {
     ZeroBalanceAvailable = 20,
     /// Returned when attempting to transfer to an address that already has an active subscription
     SubscriptionAlreadyActive = 21,
+    /// Returned when the batch size exceeds the maximum allowed (25)
+    BatchSizeExceeded = 24,
     /// Returned when attempting to subscribe to a frozen merchant
     MerchantFrozen = 22,
     /// Returned when a two-step commit is attempted without a pending proposal
