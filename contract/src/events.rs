@@ -201,4 +201,3 @@ pub fn publish_grace_period_committed(env: &Env, seconds: u64) {
         .publish((Symbol::new(env, "grace_period_committed"),), seconds);
 }
 
-

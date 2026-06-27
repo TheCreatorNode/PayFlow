@@ -1276,6 +1276,7 @@ fn subscribe_inner(
         }
     }
 
+    // Prevent new subscriptions when contract is paused
     let paused = env
         .storage()
         .instance()
@@ -1379,6 +1380,7 @@ fn check_and_update_global_volume(env: &Env, amount: i128) {
         .instance()
         .set(&DataKey::GlobalVolumeWindow, &window);
 }
+
 fn is_contract_paused(env: &Env) -> bool {
     env.storage()
         .instance()

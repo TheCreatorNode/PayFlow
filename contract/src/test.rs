@@ -1971,7 +1971,7 @@ fn test_batch_pause_subscriptions_handles_valid_missing_and_pre_paused_accounts(
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #21)")]
+#[should_panic(expected = "Error(Contract, #25)")]
 fn test_batch_pause_subscriptions_rejects_more_than_twenty_five_accounts() {
     let (env, contract_id, _token_addr, user, _merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
@@ -2641,14 +2641,14 @@ fn test_global_volume_window_reset() {
     let user_a = setup_large_balance(&env, &contract_id, &token_addr);
     let user_b = setup_large_balance(&env, &contract_id, &token_addr);
 
-    let amount: i128 = 1_000_0000000; // well under MAX_AMOUNT
+    let amount: i128 = 5_000_000_000000; // 5 trillion stroops (under MAX_SUBSCRIPTION_AMOUNT)
     let interval: u64 = 86400;
 
     client.subscribe(&user_a, &merchant, &amount, &interval, &token_addr, &None, &None);
     client.subscribe(&user_b, &merchant, &amount, &interval, &token_addr, &None, &None);
 
     env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
-    client.charge(&user_a);
+    client.charge(&user_a); // 5 trillion used this window
 
     // Advance time past the 1-hour window boundary (3601 seconds)
     env.ledger().with_mut(|l| { l.timestamp += 3601; });
@@ -4268,7 +4268,7 @@ fn test_batch_pause_subscriptions_non_admin_panics() {
 
 /// Batch size exceeding 25 must panic with BatchSizeExceeded.
 #[test]
-#[should_panic(expected = "Error(Contract, #21)")]
+#[should_panic(expected = "Error(Contract, #25)")]
 fn test_batch_pause_subscriptions_exceeds_max_size_panics() {
     let (env, contract_id, _token_addr, _user, _merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
