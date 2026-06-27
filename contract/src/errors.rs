@@ -24,6 +24,8 @@ pub enum ContractError {
     GracePeriodElapsed = 9,
     /// Returned when a merchant is not whitelisted
     MerchantNotWhitelisted = 10,
+    GlobalVolumeExceeded = 28,
+    ContractPausedError = 30,
     /// Returned when a user attempts to refer themselves
     SelfReferral = 11,
     /// Returned when the token address is not a contract
@@ -42,6 +44,8 @@ pub enum ContractError {
     ContractPaused = 18,
     /// Returned when a subscription interval is below the minimum permitted floor
     IntervalTooShort = 19,
+    /// Returned when attempting to transfer a subscription to a user who already has one
+    SubscriptionAlreadyActive = 24,
     /// Returned when a merchant attempts to withdraw with no accrued revenue
     ZeroBalanceAvailable = 20,
     /// Returned when the batch size exceeds the maximum allowed (25)

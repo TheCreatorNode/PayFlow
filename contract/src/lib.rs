@@ -69,7 +69,9 @@ pub enum DataKey {
     SubscriptionMeta(Address),
     // Feature: charge history
     ChargeHistory(Address),
-    // Feature: contract-level pause
+    // Feature: global volume cap
+    GlobalVolumeWindow,
+    // Feature: contract pause
     ContractPaused,
     // Feature: minimum subscription interval floor
     MinInterval,
@@ -94,6 +96,10 @@ pub enum DataKey {
 
 pub const SUBSCRIPTION_TTL_LEDGERS: u32 = 6307200; // ~1 year (assuming 5s blocks)
 pub const MAX_BATCH_PAUSE_SUBSCRIPTIONS: u32 = 25;
+pub const GLOBAL_MAX_VOLUME_PER_HOUR: i128 = 50_000_000_000_000; // 50 trillion stroops
+pub const HOUR_IN_SECONDS: u64 = 3600;
+pub const MAX_AMOUNT: i128 = 100_000_000_000;
+pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 1_000_000_0000000;
 
 // ─────────────────────────────────────────────────────────────
 // Data types
@@ -126,6 +132,25 @@ pub struct HealthReport {
     pub schema_version: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlobalVolumeWindow {
+    pub current_window_start: u64,
+    pub accumulated_volume: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProtocolStats {
+    pub active_count: u64,
+    pub fee_bps: u32,
+    pub fee_collector: Option<Address>,
+    pub grace_period: u64,
+    pub whitelist_enabled: bool,
+    pub schema_version: u32,
+    pub contract_paused: bool,
+}
+
 // ─────────────────────────────────────────────────────────────
 // Contract
 // ─────────────────────────────────────────────────────────────
@@ -142,6 +167,7 @@ impl FlowPay {
 
         env.storage().instance().set(&DataKey::Token, &token);
         admin::initialize_admin(&env, &admin);
+        env.storage().instance().extend_ttl(50_000, 100_000);
     }
 
     /// Creates or replaces a recurring subscription for `user`.
@@ -183,77 +209,25 @@ impl FlowPay {
         trial_period: Option<u64>,
         referrer: Option<Address>,
     ) {
-        ensure_contract_not_paused(&env);
-        user.require_auth();
+        subscribe_inner(&env, user, merchant, amount, interval, token, trial_period, referrer);
+    }
 
-        if whitelist::is_whitelist_enabled(&env) {
-            if !whitelist::is_whitelisted(&env, &merchant) {
-                env.panic_with_error(ContractError::MerchantNotWhitelisted);
-            }
+    pub fn subscribe_with_metadata(
+        env: Env,
+        user: Address,
+        merchant: Address,
+        amount: i128,
+        interval: u64,
+        token: Address,
+        trial_period: Option<u64>,
+        referrer: Option<Address>,
+        label: String,
+    ) {
+        if label.len() > 64 {
+            env.panic_with_error(ContractError::MetadataLabelTooLong);
         }
-
-        if whitelist::is_frozen(&env, &merchant) {
-            env.panic_with_error(ContractError::MerchantFrozen);
-        }
-
-        validation::require_valid_amount(&env, amount);
-        if interval == 0 {
-            env.panic_with_error(ContractError::IntervalMustBePositive);
-        }
-
-        use soroban_sdk::xdr::ToXdr;
-        if token.clone().to_xdr(&env).get(7) == Some(0) {
-            env.panic_with_error(ContractError::InvalidTokenAddress);
-        }
-
-        validation::check_allowance(&env, &user, &token, amount);
-        if interval < 60 {
-            env.panic_with_error(ContractError::IntervalTooShort);
-        }
-
-        if interval < min_interval::get_min_interval(&env) {
-            env.panic_with_error(ContractError::IntervalTooShort);
-        }
-
-        let token_client = token::Client::new(&env, &token);
-        let allowance = token_client.allowance(&user, &env.current_contract_address());
-        if allowance < amount {
-            env.panic_with_error(ContractError::InsufficientAllowance);
-        }
-
-        let now = env.ledger().timestamp();
-        let trial_duration = trial_period.unwrap_or(0);
-        let last_charged = now + trial_duration;
-
-        let existing = storage::get_subscription(&env, &user);
-        let should_increment = existing.as_ref().map_or(true, |s| !s.active);
-
-        let sub = Subscription {
-            merchant,
-            amount,
-            interval,
-            last_charged,
-            active: true,
-            paused: false,
-            token,
-            referrer: referrer.clone(),
-            label: Symbol::new(&env, ""), // deprecated: use SubscriptionMeta storage instead
-            trial_duration,
-        };
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::Subscription(user.clone()), &sub);
-
-        extend_subscription_ttl(&env, &user);
-
-        if should_increment {
-            subscription_count::increment(&env);
-            subscription_count::append_subscriber_index(&env, &user);
-        }
-        referral::store_referral(&env, &user, &referrer);
-        merchant_stats::increment_subscriber_count(&env, &sub.merchant);
-        events::publish_subscribed(&env, &user, &sub);
+        subscribe_inner(&env, user.clone(), merchant, amount, interval, token, trial_period, referrer);
+        subscription_metadata::set_metadata(&env, &user, label);
     }
 
     /// Charges the next due recurring payment for `user`.
@@ -313,6 +287,7 @@ impl FlowPay {
             env.panic_with_error(ContractError::GracePeriodElapsed);
         }
 
+        check_and_update_global_volume(&env, sub.amount);
         charge_exec::execute_charge(&env, &user, &key, &mut sub, now);
     }
 
@@ -396,6 +371,7 @@ impl FlowPay {
             &merchant_amount,
         );
 
+        check_and_update_global_volume(&env, amount);
         merchant_stats::increment_revenue_with_daily(&env, &sub.merchant, merchant_amount);
         spending_limit::record_spend(&env, &user, amount);
 
@@ -441,6 +417,7 @@ impl FlowPay {
 
         subscription_count::decrement(&env);
         merchant_stats::decrement_subscriber_count(&env, &sub.merchant);
+        referral::remove_referral(&env, &user);
         events::publish_cancelled(&env, &user);
     }
 
@@ -528,58 +505,6 @@ impl FlowPay {
         env.storage().persistent().set(&key, &sub);
 
         events::publish_resumed(&env, &user);
-    }
-
-    /// Pauses up to 25 active subscriptions in a single emergency admin action.
-    ///
-    /// Missing or inactive subscriptions are skipped so a mixed batch can still
-    /// process every valid account. Already-paused subscriptions are treated as
-    /// no-ops, but their TTL is refreshed to preserve idempotency.
-    pub fn batch_pause_subscriptions(env: Env, users: Vec<Address>) {
-        admin::require_admin(&env);
-        assert!(
-            users.len() <= MAX_BATCH_PAUSE_SUBSCRIPTIONS,
-            "batch size exceeds maximum"
-        );
-
-        for user in users.iter() {
-            let key = DataKey::Subscription(user.clone());
-            let sub_opt: Option<Subscription> = env.storage().persistent().get(&key);
-
-            if let Some(mut sub) = sub_opt {
-                if !sub.active {
-                    continue;
-                }
-
-                let was_paused = sub.paused;
-                sub.paused = true;
-
-                env.storage().persistent().set(&key, &sub);
-                extend_subscription_ttl(&env, &user);
-
-                if !was_paused {
-                    events::publish_subscription_paused(&env, &user);
-                }
-            }
-        }
-    }
-
-    /// Pauses all user-facing payment operations for the contract.
-    pub fn pause_contract(env: Env) {
-        admin::require_admin(&env);
-        env.storage()
-            .instance()
-            .set(&DataKey::ContractPaused, &true);
-        events::publish_contract_paused(&env);
-    }
-
-    /// Unpauses user-facing payment operations for the contract.
-    pub fn unpause_contract(env: Env) {
-        admin::require_admin(&env);
-        env.storage()
-            .instance()
-            .set(&DataKey::ContractPaused, &false);
-        events::publish_contract_unpaused(&env);
     }
 
     /// Batch-pauses subscriptions for a list of user addresses.
@@ -1174,6 +1099,45 @@ impl FlowPay {
     }
 
     // ─────────────────────────────────────────────────────────────
+    // Protocol stats
+    // ─────────────────────────────────────────────────────────────
+
+    /// Returns a snapshot of all protocol-level state in a single call.
+    pub fn get_protocol_stats(env: Env) -> ProtocolStats {
+        ProtocolStats {
+            active_count: subscription_count::get_active_count(&env),
+            fee_bps: fee::get_fee_bps(&env),
+            fee_collector: fee::get_fee_collector(&env),
+            grace_period: grace::get_grace_period(&env),
+            whitelist_enabled: whitelist::is_whitelist_enabled(&env),
+            schema_version: migration::get_schema_version(&env),
+            contract_paused: env
+                .storage()
+                .instance()
+                .get(&DataKey::ContractPaused)
+                .unwrap_or(false),
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Contract pause
+    // ─────────────────────────────────────────────────────────────
+
+    /// Pauses the contract. Only the admin can call this.
+    pub fn pause_contract(env: Env) {
+        admin::require_admin(&env);
+        storage::set_contract_paused(&env, true);
+        events::publish_contract_paused(&env);
+    }
+
+    /// Unpauses the contract. Only the admin can call this.
+    pub fn unpause_contract(env: Env) {
+        admin::require_admin(&env);
+        storage::set_contract_paused(&env, false);
+        events::publish_contract_unpaused(&env);
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // Admin setup
     // ─────────────────────────────────────────────────────────────
 
@@ -1194,7 +1158,14 @@ impl FlowPay {
         let contract_paused = storage::is_contract_paused(&env);
         let token_configured = storage::get_token(&env).is_some();
         let admin_configured = storage::get_admin_optional(&env).is_some();
-        let instance_ttl_ledgers = env.storage().max_ttl();
+
+        #[cfg(any(test, feature = "testutils"))]
+        let instance_ttl_ledgers = {
+            use soroban_sdk::testutils::storage::Instance as _;
+            env.storage().instance().get_ttl()
+        };
+        #[cfg(not(any(test, feature = "testutils")))]
+        let instance_ttl_ledgers = 100_000; // at least 1 day of TTL remaining, used as default since get_ttl is not available on-chain
         let active_subscription_count = subscription_count::get_active_count(&env);
         let schema_version = migration::get_schema_version(&env);
 
@@ -1226,6 +1197,56 @@ impl FlowPay {
     pub fn get_charge_history_page(env: Env, user: Address, offset: u32, limit: u32) -> Vec<u64> {
         subscription_history::get_charge_history_page(&env, &user, offset, limit)
     }
+
+    /// Transfers subscription ownership from `user` to `new_user`.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorization from `user`.
+    ///
+    /// # Errors
+    ///
+    /// Panics if the contract is paused, no active subscription exists for
+    /// `user`, or `new_user` already holds an active subscription.
+    ///
+    /// # Side Effects
+    ///
+    /// Moves the subscription struct to `new_user`, removes it from `user`,
+    /// refreshes TTL, and emits `sub_transferred`.
+    pub fn transfer_subscription(env: Env, user: Address, new_user: Address) {
+        ensure_contract_not_paused(&env);
+        user.require_auth();
+
+        let old_key = DataKey::Subscription(user.clone());
+        let new_key = DataKey::Subscription(new_user.clone());
+
+        let sub: Subscription = env
+            .storage()
+            .persistent()
+            .get(&old_key)
+            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
+
+        if !sub.active {
+            env.panic_with_error(ContractError::NoSubscriptionFound);
+        }
+
+        if let Some(existing) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Subscription>(&new_key)
+        {
+            if existing.active {
+                env.panic_with_error(ContractError::SubscriptionAlreadyActive);
+            }
+        }
+
+        env.storage().persistent().set(&new_key, &sub);
+        env.storage().persistent().remove(&old_key);
+
+        extend_subscription_ttl(&env, &new_user);
+
+        events::publish_subscription_transferred(&env, &user, &new_user);
+    }
 }
 
 fn extend_subscription_ttl(env: &Env, user: &Address) {
@@ -1234,8 +1255,130 @@ fn extend_subscription_ttl(env: &Env, user: &Address) {
         SUBSCRIPTION_TTL_LEDGERS,
         SUBSCRIPTION_TTL_LEDGERS,
     );
+    env.storage().instance().extend_ttl(SUBSCRIPTION_TTL_LEDGERS, SUBSCRIPTION_TTL_LEDGERS);
 }
 
+fn subscribe_inner(
+    env: &Env,
+    user: Address,
+    merchant: Address,
+    amount: i128,
+    interval: u64,
+    token: Address,
+    trial_period: Option<u64>,
+    referrer: Option<Address>,
+) {
+    user.require_auth();
+
+    if whitelist::is_whitelist_enabled(env) {
+        if !whitelist::is_whitelisted(env, &merchant) {
+            env.panic_with_error(ContractError::MerchantNotWhitelisted);
+        }
+    }
+
+    let paused = env
+        .storage()
+        .instance()
+        .get::<_, bool>(&DataKey::ContractPaused)
+        .unwrap_or(false);
+    if paused {
+        env.panic_with_error(ContractError::ContractPausedError);
+    }
+
+    if whitelist::is_frozen(env, &merchant) {
+        env.panic_with_error(ContractError::MerchantFrozen);
+    }
+
+    validation::require_valid_amount(env, amount);
+    if interval == 0 {
+        env.panic_with_error(ContractError::IntervalMustBePositive);
+    }
+
+    use soroban_sdk::xdr::ToXdr;
+    if token.clone().to_xdr(env).get(7) == Some(0) {
+        env.panic_with_error(ContractError::InvalidTokenAddress);
+    }
+
+    validation::check_allowance(env, &user, &token, amount);
+    if interval < 60 {
+        env.panic_with_error(ContractError::IntervalTooShort);
+    }
+
+    if interval < min_interval::get_min_interval(env) {
+        env.panic_with_error(ContractError::IntervalTooShort);
+    }
+
+    let token_client = token::Client::new(env, &token);
+    let allowance = token_client.allowance(&user, &env.current_contract_address());
+    if allowance < amount {
+        env.panic_with_error(ContractError::InsufficientAllowance);
+    }
+
+    let now = env.ledger().timestamp();
+    let trial_duration = trial_period.unwrap_or(0);
+    let last_charged = now + trial_duration;
+
+    let existing = storage::get_subscription(env, &user);
+    let should_increment = existing.as_ref().map_or(true, |s| !s.active);
+
+    let sub = Subscription {
+        merchant,
+        amount,
+        interval,
+        last_charged,
+        active: true,
+        paused: false,
+        token,
+        referrer: referrer.clone(),
+        label: Symbol::new(env, ""),
+        trial_duration,
+    };
+
+    env.storage()
+        .persistent()
+        .set(&DataKey::Subscription(user.clone()), &sub);
+
+    extend_subscription_ttl(env, &user);
+
+    if should_increment {
+        subscription_count::increment(env);
+        subscription_count::append_subscriber_index(env, &user);
+    }
+    referral::store_referral(env, &user, &referrer);
+    merchant_stats::increment_subscriber_count(env, &sub.merchant);
+    events::publish_subscribed(env, &user, &sub);
+}
+
+fn check_and_update_global_volume(env: &Env, amount: i128) {
+    let now = env.ledger().timestamp();
+    let mut window: GlobalVolumeWindow = env
+        .storage()
+        .instance()
+        .get(&DataKey::GlobalVolumeWindow)
+        .unwrap_or(GlobalVolumeWindow {
+            current_window_start: now,
+            accumulated_volume: 0,
+        });
+
+    if now >= window.current_window_start + HOUR_IN_SECONDS {
+        window.current_window_start = now;
+        window.accumulated_volume = 0;
+    }
+
+    let new_volume = window
+        .accumulated_volume
+        .checked_add(amount)
+        .unwrap_or_else(|| env.panic_with_error(ContractError::GlobalVolumeExceeded));
+
+    if new_volume > GLOBAL_MAX_VOLUME_PER_HOUR {
+        env.panic_with_error(ContractError::GlobalVolumeExceeded);
+    }
+
+    window.accumulated_volume = new_volume;
+    env.storage()
+        .instance()
+        .set(&DataKey::GlobalVolumeWindow, &window);
+}
 fn is_contract_paused(env: &Env) -> bool {
     env.storage()
         .instance()

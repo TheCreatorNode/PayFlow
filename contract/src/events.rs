@@ -71,9 +71,21 @@ pub fn publish_resumed(env: &Env, user: &Address) {
         .publish((Symbol::new(env, "resumed"), user.clone()), ());
 }
 
-pub fn publish_upgraded(env: &Env, new_wasm_hash: &BytesN<32>) {
+pub fn publish_subscription_paused(env: &Env, user: &Address) {
     env.events()
-        .publish((Symbol::new(env, "upgraded"),), new_wasm_hash.clone());
+        .publish((Symbol::new(env, "subscription_paused"), user.clone()), ());
+}
+
+pub fn publish_subscription_transferred(env: &Env, old_user: &Address, new_user: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "sub_transferred"), old_user.clone()),
+        new_user.clone(),
+    );
+}
+
+pub fn publish_upgraded(env: &Env, _new_wasm_hash: &BytesN<32>) {
+    env.events()
+        .publish((Symbol::new(env, "upgrade"),), ());
 }
 
 pub fn publish_contract_paused(env: &Env) {
@@ -94,21 +106,6 @@ pub fn publish_daily_limit_set(env: &Env, user: &Address, limit: i128) {
 pub fn publish_daily_limit_removed(env: &Env, user: &Address) {
     env.events()
         .publish((Symbol::new(env, "daily_limit_removed"), user.clone()), ());
-}
-
-pub fn publish_subscription_paused(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "subscription_paused"), user.clone()), ());
-}
-
-pub fn publish_paused(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "paused"), user.clone()), ());
-}
-
-pub fn publish_resumed(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "resumed"), user.clone()), ());
 }
 
 pub fn publish_subscription_amount_updated(
@@ -139,13 +136,6 @@ pub fn publish_merchant_withdrawal(env: &Env, merchant: &Address, amount: i128) 
     env.events().publish(
         (Symbol::new(env, "merchant_withdrawal"), merchant.clone()),
         amount,
-    );
-}
-
-pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_history_cleared"), merchant.clone()),
-        (),
     );
 }
 
@@ -211,12 +201,4 @@ pub fn publish_grace_period_committed(env: &Env, seconds: u64) {
         .publish((Symbol::new(env, "grace_period_committed"),), seconds);
 }
 
-pub fn publish_min_interval_updated(env: &Env, seconds: u64) {
-    env.events()
-        .publish((Symbol::new(env, "min_interval_updated"),), seconds);
-}
 
-pub fn publish_subscription_paused(env: &Env, user: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "subscription_paused"), user.clone()), ());
-}

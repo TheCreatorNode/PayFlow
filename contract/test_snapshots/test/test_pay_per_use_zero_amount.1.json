@@ -419,7 +419,7 @@
                         "symbol": "label"
                       },
                       "val": {
-                        "symbol": "default"
+                        "symbol": ""
                       }
                     },
                     {
@@ -519,7 +519,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -890,7 +890,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ]
     ]
@@ -1485,10 +1485,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'amount must be positive' from contract function 'Symbol(obj#261)'"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                  "string": "failing with contract error"
                 },
                 {
                   "u32": 2
