@@ -48,4 +48,6 @@ pub enum ContractError {
     MerchantFrozen = 22,
     /// Returned when a two-step commit is attempted without a pending proposal
     NoPendingProposal = 23,
+    /// Returned when a provided recipient address is invalid (e.g., contract address)
+    InvalidRecipient = 24,
 }
