@@ -9,10 +9,33 @@ pub fn publish_subscribed(env: &Env, user: &Address, sub: &Subscription) {
     );
 }
 
-pub fn publish_charged(env: &Env, user: &Address, sub: &Subscription, charged_at: u64) {
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChargeEventData {
+    pub merchant: Address,
+    pub gross: i128,
+    pub fee: i128,
+    pub net: i128,
+    pub charged_at: u64,
+}
+
+pub fn publish_charged(
+    env: &Env,
+    user: &Address,
+    sub: &Subscription,
+    fee_amount: i128,
+    charged_at: u64,
+) {
+    let net = sub.amount - fee_amount;
     env.events().publish(
         (Symbol::new(env, "charged"), user.clone()),
-        (sub.merchant.clone(), sub.amount, charged_at),
+        ChargeEventData {
+            merchant: sub.merchant.clone(),
+            gross: sub.amount,
+            fee: fee_amount,
+            net,
+            charged_at,
+        },
     );
 }
 
@@ -26,6 +49,26 @@ pub fn publish_pay_per_use(env: &Env, user: &Address, merchant: &Address, amount
 pub fn publish_cancelled(env: &Env, user: &Address) {
     env.events()
         .publish((Symbol::new(env, "cancelled"), user.clone()), ());
+}
+
+pub fn publish_min_interval_updated(env: &Env, seconds: u64) {
+    env.events()
+        .publish((Symbol::new(env, "min_interval"),), seconds);
+}
+
+pub fn publish_merchant_history_cleared(env: &Env, merchant: &Address) {
+    env.events()
+        .publish((Symbol::new(env, "merch_hist_cleared"),), merchant.clone());
+}
+
+pub fn publish_paused(env: &Env, user: &Address) {
+    env.events()
+        .publish((Symbol::new(env, "paused"), user.clone()), ());
+}
+
+pub fn publish_resumed(env: &Env, user: &Address) {
+    env.events()
+        .publish((Symbol::new(env, "resumed"), user.clone()), ());
 }
 
 pub fn publish_upgraded(env: &Env, new_wasm_hash: &BytesN<32>) {
