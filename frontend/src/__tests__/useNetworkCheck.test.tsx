@@ -21,7 +21,7 @@ function mockFreighterNetwork(networkPassphrase: string) {
       network: "TESTNET",
       networkPassphrase,
     }),
-  } as typeof window.freighter;
+  } as unknown as typeof window.freighter;
 }
 
 describe("useNetworkCheck", () => {
