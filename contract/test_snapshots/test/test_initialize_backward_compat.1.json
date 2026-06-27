@@ -577,7 +577,7 @@
                         "symbol": "label"
                       },
                       "val": {
-                        "symbol": "default"
+                        "symbol": ""
                       }
                     },
                     {
@@ -616,14 +616,6 @@
                       },
                       "val": {
                         "address": "CD3FXVGYSLQFFTW3UH6WFF2OKZH7VERGZJZAMJHTGHBWO4F6URWEJL23"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "trial_duration"
-                      },
-                      "val": {
-                        "u64": 0
                       }
                     },
                     {
@@ -2442,7 +2434,7 @@
                     "symbol": "label"
                   },
                   "val": {
-                    "symbol": "default"
+                    "symbol": ""
                   }
                 },
                 {
@@ -2481,14 +2473,6 @@
                   },
                   "val": {
                     "address": "CD3FXVGYSLQFFTW3UH6WFF2OKZH7VERGZJZAMJHTGHBWO4F6URWEJL23"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "trial_duration"
-                  },
-                  "val": {
-                    "u64": 0
                   }
                 },
                 {

@@ -1971,7 +1971,7 @@ fn test_batch_pause_subscriptions_handles_valid_missing_and_pre_paused_accounts(
 }
 
 #[test]
-#[should_panic(expected = "batch size exceeds maximum")]
+#[should_panic(expected = "Error(Contract, #21)")]
 fn test_batch_pause_subscriptions_rejects_more_than_twenty_five_accounts() {
     let (env, contract_id, _token_addr, user, _merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
@@ -2641,14 +2641,14 @@ fn test_global_volume_window_reset() {
     let user_a = setup_large_balance(&env, &contract_id, &token_addr);
     let user_b = setup_large_balance(&env, &contract_id, &token_addr);
 
-    let amount: i128 = 30_000_000_000_000; // 30 trillion stroops
+    let amount: i128 = 1_000_0000000; // well under MAX_AMOUNT
     let interval: u64 = 86400;
 
     client.subscribe(&user_a, &merchant, &amount, &interval, &token_addr, &None, &None);
     client.subscribe(&user_b, &merchant, &amount, &interval, &token_addr, &None, &None);
 
     env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
-    client.charge(&user_a); // 30 trillion used this window
+    client.charge(&user_a);
 
     // Advance time past the 1-hour window boundary (3601 seconds)
     env.ledger().with_mut(|l| { l.timestamp += 3601; });
@@ -2790,7 +2790,8 @@ fn test_get_protocol_stats_with_fee() {
 
     env.mock_all_auths();
     let fee_collector = Address::generate(&env);
-    client.set_fee(&fee_collector, &100); // 1% fee
+    client.propose_fee(&fee_collector, &100); // 1% fee
+    client.commit_fee();
 
     let stats = client.get_protocol_stats();
     assert_eq!(stats.fee_bps, 100);
@@ -3028,15 +3029,6 @@ fn test_clear_merchant_revenue_history_non_admin_panics() {
 // ─────────────────────────────────────────────
 // Subscriber index tests
 // ─────────────────────────────────────────────
-
-fn setup_funded_user(env: &Env, contract_id: &Address, token_addr: &Address) -> Address {
-    let user = Address::generate(env);
-    let sac = StellarAssetClient::new(env, token_addr);
-    sac.mint(&user, &10_000_0000000);
-    let token = TokenClient::new(env, token_addr);
-    token.approve(&user, contract_id, &10_000_0000000, &200);
-    user
-}
 
 #[test]
 fn test_subscriber_index_three_unique_users() {
