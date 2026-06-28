@@ -18,6 +18,7 @@ pub struct SubscriptionV1 {
 }
 
 /// Current storage schema version.
+#[allow(dead_code)]
 pub const CURRENT_VERSION: u32 = 2;
 
 /// Returns the stored schema version, defaulting to 1 (pre-versioning).

@@ -31,8 +31,12 @@ pub fn propose_fee(env: &Env, collector: Address, bps: u32) {
     }
     crate::admin::require_admin(env);
     let pending = (collector.clone(), bps);
-    env.storage().temporary().set(&DataKey::PendingFee, &pending);
-    env.storage().temporary().extend_ttl(&DataKey::PendingFee, 17280, 17280);
+    env.storage()
+        .temporary()
+        .set(&DataKey::PendingFee, &pending);
+    env.storage()
+        .temporary()
+        .extend_ttl(&DataKey::PendingFee, 17280, 17280);
     crate::events::publish_fee_proposed(env, &collector, bps);
 }
 

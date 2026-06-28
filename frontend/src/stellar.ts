@@ -8,7 +8,6 @@ import {
   Contract,
   Networks,
   TransactionBuilder,
-  Transaction,
   BASE_FEE,
   nativeToScVal,
   Address,

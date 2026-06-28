@@ -84,8 +84,7 @@ pub fn publish_subscription_transferred(env: &Env, old_user: &Address, new_user:
 }
 
 pub fn publish_upgraded(env: &Env, _new_wasm_hash: &BytesN<32>) {
-    env.events()
-        .publish((Symbol::new(env, "upgrade"),), ());
+    env.events().publish((Symbol::new(env, "upgrade"),), ());
 }
 
 pub fn publish_contract_paused(env: &Env) {
@@ -154,34 +153,32 @@ pub fn publish_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Add
 }
 
 pub fn publish_fee_proposed(env: &Env, collector: &Address, bps: u32) {
-    env.events()
-        .publish((Symbol::new(env, "fee_proposed"),), (collector.clone(), bps));
+    env.events().publish(
+        (Symbol::new(env, "fee_proposed"),),
+        (collector.clone(), bps),
+    );
 }
 
 pub fn publish_fee_committed(env: &Env, collector: &Address, bps: u32) {
-    env.events()
-        .publish((Symbol::new(env, "fee_committed"),), (collector.clone(), bps));
+    env.events().publish(
+        (Symbol::new(env, "fee_committed"),),
+        (collector.clone(), bps),
+    );
 }
 
 pub fn publish_merchant_added(env: &Env, merchant: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_added"), merchant.clone()),
-        (),
-    );
+    env.events()
+        .publish((Symbol::new(env, "merchant_added"), merchant.clone()), ());
 }
 
 pub fn publish_merchant_removed(env: &Env, merchant: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_removed"), merchant.clone()),
-        (),
-    );
+    env.events()
+        .publish((Symbol::new(env, "merchant_removed"), merchant.clone()), ());
 }
 
 pub fn publish_merchant_frozen(env: &Env, merchant: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "merchant_frozen"), merchant.clone()),
-        (),
-    );
+    env.events()
+        .publish((Symbol::new(env, "merchant_frozen"), merchant.clone()), ());
 }
 
 pub fn publish_merchant_unfrozen(env: &Env, merchant: &Address) {
@@ -200,5 +197,3 @@ pub fn publish_grace_period_committed(env: &Env, seconds: u64) {
     env.events()
         .publish((Symbol::new(env, "grace_period_committed"),), seconds);
 }
-
-

@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::too_many_arguments)]
 
 mod admin;
 mod batch;
@@ -99,7 +100,7 @@ pub const MAX_BATCH_PAUSE_SUBSCRIPTIONS: u32 = 25;
 pub const GLOBAL_MAX_VOLUME_PER_HOUR: i128 = 50_000_000_000_000; // 50 trillion stroops
 pub const HOUR_IN_SECONDS: u64 = 3600;
 pub const MAX_AMOUNT: i128 = 100_000_000_000;
-pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 1_000_000_0000000;
+pub const MAX_SUBSCRIPTION_AMOUNT: i128 = 10_000_000_000_000;
 
 // ─────────────────────────────────────────────────────────────
 // Data types
@@ -209,7 +210,16 @@ impl FlowPay {
         trial_period: Option<u64>,
         referrer: Option<Address>,
     ) {
-        subscribe_inner(&env, user, merchant, amount, interval, token, trial_period, referrer);
+        subscribe_inner(
+            &env,
+            user,
+            merchant,
+            amount,
+            interval,
+            token,
+            trial_period,
+            referrer,
+        );
     }
 
     pub fn subscribe_with_metadata(
@@ -226,8 +236,17 @@ impl FlowPay {
         if label.len() > 64 {
             env.panic_with_error(ContractError::MetadataLabelTooLong);
         }
-        subscribe_inner(&env, user.clone(), merchant, amount, interval, token, trial_period, referrer);
-        subscription_metadata::set_metadata(&env, &user, label);
+        subscribe_inner(
+            &env,
+            user.clone(),
+            merchant,
+            amount,
+            interval,
+            token,
+            trial_period,
+            referrer,
+        );
+        let _ = subscription_metadata::set_metadata(&env, &user, label);
     }
 
     /// Charges the next due recurring payment for `user`.
@@ -906,11 +925,7 @@ impl FlowPay {
         let mut i = offset;
         let end = offset + cap as u64;
         while i < end && i < count {
-            if let Some(addr) = env
-                .storage()
-                .persistent()
-                .get(&DataKey::SubscriberIndex(i))
-            {
+            if let Some(addr) = env.storage().persistent().get(&DataKey::SubscriberIndex(i)) {
                 result.push_back(addr);
             }
             i += 1;
@@ -1261,7 +1276,9 @@ fn extend_subscription_ttl(env: &Env, user: &Address) {
         SUBSCRIPTION_TTL_LEDGERS,
         SUBSCRIPTION_TTL_LEDGERS,
     );
-    env.storage().instance().extend_ttl(SUBSCRIPTION_TTL_LEDGERS, SUBSCRIPTION_TTL_LEDGERS);
+    env.storage()
+        .instance()
+        .extend_ttl(SUBSCRIPTION_TTL_LEDGERS, SUBSCRIPTION_TTL_LEDGERS);
 }
 
 fn subscribe_inner(
@@ -1276,10 +1293,8 @@ fn subscribe_inner(
 ) {
     user.require_auth();
 
-    if whitelist::is_whitelist_enabled(env) {
-        if !whitelist::is_whitelisted(env, &merchant) {
-            env.panic_with_error(ContractError::MerchantNotWhitelisted);
-        }
+    if whitelist::is_whitelist_enabled(env) && !whitelist::is_whitelisted(env, &merchant) {
+        env.panic_with_error(ContractError::MerchantNotWhitelisted);
     }
 
     let paused = env
@@ -1325,7 +1340,7 @@ fn subscribe_inner(
     let last_charged = now + trial_duration;
 
     let existing = storage::get_subscription(env, &user);
-    let should_increment = existing.as_ref().map_or(true, |s| !s.active);
+    let should_increment = existing.as_ref().is_none_or(|s| !s.active);
 
     if let Some(ref existing_sub) = existing {
         if existing_sub.active && existing_sub.merchant != merchant {

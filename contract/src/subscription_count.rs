@@ -51,11 +51,9 @@ pub fn append_subscriber_index(env: &Env, user: &Address) {
     let slot = get_subscriber_index_size(env);
     let key = DataKey::SubscriberIndex(slot);
     env.storage().persistent().set(&key, user);
-    env.storage().persistent().extend_ttl(
-        &key,
-        SUBSCRIPTION_TTL_LEDGERS,
-        SUBSCRIPTION_TTL_LEDGERS,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, SUBSCRIPTION_TTL_LEDGERS, SUBSCRIPTION_TTL_LEDGERS);
     env.storage()
         .persistent()
         .set(&DataKey::SubscriberIndexSize, &(slot + 1));
