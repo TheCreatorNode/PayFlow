@@ -1387,265 +1387,6 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "MerchantRevenueHistory"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "MerchantRevenueHistory"
-                    },
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "vec": [
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 10000000
-                      }
-                    }
-                  ]
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "MerchantSubCount"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "MerchantSubCount"
-                    },
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 1
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "SubscriberIndex"
-                },
-                {
-                  "u64": 0
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "SubscriberIndex"
-                    },
-                    {
-                      "u64": 0
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          6307200
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "SubscriberIndexSize"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "SubscriberIndexSize"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 1
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "vec": [
-                {
                   "symbol": "Subscription"
                 },
                 {
@@ -5848,11 +5589,21 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000003"
               },
               {
-                "symbol": "get_charge_history"
+                "symbol": "get_charge_history_page"
               }
             ],
             "data": {
-              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                },
+                {
+                  "u32": 0
+                },
+                {
+                  "u32": 100
+                }
+              ]
             }
           }
         }
@@ -5871,7 +5622,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "get_charge_history"
+                "symbol": "get_charge_history_page"
               }
             ],
             "data": {
