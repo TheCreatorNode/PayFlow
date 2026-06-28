@@ -1187,8 +1187,9 @@ impl FlowPay {
     }
 
     /// Clears the charge history for a subscriber.
+    /// Only the contract admin can call this.
     pub fn clear_charge_history(env: Env, user: Address) {
-        user.require_auth();
+        admin::require_admin(&env);
         subscription_history::clear_charge_history(&env, &user);
     }
 

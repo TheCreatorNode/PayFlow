@@ -1,6 +1,6 @@
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::DataKey;
+use crate::{DataKey, SUBSCRIPTION_TTL_LEDGERS};
 
 /// Maximum number of charge timestamps retained per subscriber.
 const MAX_HISTORY: u32 = 12;
@@ -32,6 +32,12 @@ pub fn record_charge(env: &Env, user: &Address, timestamp: u64) {
     env.storage()
         .persistent()
         .set(&DataKey::ChargeHistory(user.clone()), &history);
+
+    env.storage().persistent().extend_ttl(
+        &DataKey::ChargeHistory(user.clone()),
+        SUBSCRIPTION_TTL_LEDGERS / 2,
+        SUBSCRIPTION_TTL_LEDGERS,
+    );
 }
 
 /// Clears the stored charge history for a subscriber.

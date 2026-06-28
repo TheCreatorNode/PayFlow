@@ -2289,6 +2289,193 @@ fn test_charge_history_capped_at_12() {
     assert_eq!(client.get_charge_history(&user).len(), 12);
 }
 
+#[test]
+fn test_get_charge_history_three_charges_ascending() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let interval: u64 = 86400;
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+    let t1 = env.ledger().timestamp();
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+    let t2 = env.ledger().timestamp();
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+    let t3 = env.ledger().timestamp();
+
+    let history = client.get_charge_history(&user);
+    assert_eq!(history.len(), 3);
+    assert_eq!(history.get(0).unwrap(), t1);
+    assert_eq!(history.get(1).unwrap(), t2);
+    assert_eq!(history.get(2).unwrap(), t3);
+}
+
+#[test]
+fn test_get_charge_history_page_offset_limit() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let interval: u64 = 86400;
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+    let t1 = env.ledger().timestamp();
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+    let t2 = env.ledger().timestamp();
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+    let t3 = env.ledger().timestamp();
+
+    let page = client.get_charge_history_page(&user, &1u32, &2u32);
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.get(0).unwrap(), t2);
+    assert_eq!(page.get(1).unwrap(), t3);
+}
+
+#[test]
+#[should_panic]
+fn test_clear_charge_history_non_admin_panics() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    env.set_auths(&[]);
+    client.clear_charge_history(&user);
+}
+
+#[test]
+fn test_clear_charge_history_admin_succeeds() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let interval: u64 = 86400;
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+
+    assert_eq!(client.get_charge_history(&user).len(), 1);
+
+    client.clear_charge_history(&user);
+
+    assert_eq!(client.get_charge_history(&user).len(), 0);
+}
+
+#[test]
+fn test_get_charge_history_empty_for_no_history() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let random = Address::generate(&env);
+    let history = client.get_charge_history(&random);
+    assert_eq!(history.len(), 0);
+}
+
+#[test]
+fn test_get_charge_history_page_limit_capped_at_12() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let interval: u64 = 86400;
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    for _ in 0..14 {
+        env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+        client.charge(&user);
+    }
+
+    let page = client.get_charge_history_page(&user, &0u32, &100u32);
+    assert_eq!(page.len(), 12);
+}
+
+#[test]
+fn test_get_charge_history_page_offset_beyond_length() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let interval: u64 = 86400;
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &interval,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + 1; });
+    client.charge(&user);
+
+    let page = client.get_charge_history_page(&user, &5u32, &2u32);
+    assert_eq!(page.len(), 0);
+}
+
+#[test]
+fn test_clear_charge_history_nonexistent_key_no_panic() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+
+    let random = Address::generate(&env);
+    client.clear_charge_history(&random);
+}
+
 // ─────────────────────────────────────────────
 // contract_health_check tests
 // ─────────────────────────────────────────────
