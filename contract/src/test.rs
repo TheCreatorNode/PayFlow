@@ -2267,25 +2267,8 @@ fn test_ttl_extension() {
         &None,
     );
 
-    // We can't easily assert the exact TTL in the test environment without more complex mock_all_auths
-    // or internal access, but we can verify the function exists and doesn't panic.
-    client.subscribe(&user, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
-
-    // Keep the contract instance itself alive across the jump below — only the
-    // Subscription entry's TTL is extended by extend_subscription_ttl, but the
-    // contract instance needs its own TTL or the whole contract becomes archived.
-    // Extend a bit past SUBSCRIPTION_TTL_LEDGERS to cover the two ledger jumps below.
-    env.as_contract(&contract_id, || {
-        env.storage()
-            .instance()
-            .extend_ttl(SUBSCRIPTION_TTL_LEDGERS + 10, SUBSCRIPTION_TTL_LEDGERS + 10);
-    });
-
-    env.ledger().with_mut(|l| {
-        l.sequence_number += SUBSCRIPTION_TTL_LEDGERS - 1;
-    });
-
     client.extend_subscription_ttl(&user);
+
     assert!(client.get_subscription(&user).is_some());
 }
 
@@ -2340,9 +2323,9 @@ fn test_subscribe_amount_at_cap_succeeds() {
     let (env, contract_id, token_addr, user, merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);
 
-    let sac = StellarAssetClient::new(&env, &token_addr);
+    let sac = soroban_sdk::token::StellarAssetClient::new(&env, &token_addr);
     sac.mint(&user, &MAX_SUBSCRIPTION_AMOUNT);
-    let token = TokenClient::new(&env, &token_addr);
+    let token = soroban_sdk::token::Client::new(&env, &token_addr);
     token.approve(&user, &contract_id, &MAX_SUBSCRIPTION_AMOUNT, &200);
 
     client.subscribe(&user, &merchant, &MAX_SUBSCRIPTION_AMOUNT, &86400, &token_addr, &None, &None);
@@ -4067,6 +4050,29 @@ fn test_is_charge_due_false_for_paused_subscription() {
 }
 
 #[test]
+fn test_is_charge_due_false_past_grace_window() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &user);
+    });
+
+    let interval: u64 = 86400;
+    let grace: u64 = 3600;
+    client.subscribe(&user, &merchant, &1_0000000, &interval, &token_addr, &None, &None);
+    client.set_grace_period(&grace);
+
+    env.ledger().with_mut(|l| { l.timestamp += interval + grace + 1; });
+
+    assert!(!client.is_charge_due(&user));
+}
+
+#[test]
+fn test_is_charge_due_false_for_unknown_address() {
+    let (env, contract_id, _token_addr, _user, _merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    assert!(!client.is_charge_due(&Address::generate(&env)));
 fn test_daily_limit_day_start_boundary() {
     let (env, contract_id, token_addr, user, merchant) = setup();
     let client = FlowPayClient::new(&env, &contract_id);

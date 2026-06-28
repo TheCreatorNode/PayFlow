@@ -214,6 +214,67 @@ impl FlowPay {
         trial_period: Option<u64>,
         referrer: Option<Address>,
     ) {
+        ensure_contract_not_paused(&env);
+        user.require_auth();
+
+        if whitelist::is_whitelist_enabled(&env) {
+            if !whitelist::is_whitelisted(&env, &merchant) {
+                env.panic_with_error(ContractError::MerchantNotWhitelisted);
+            }
+        }
+
+        if whitelist::is_frozen(&env, &merchant) {
+            env.panic_with_error(ContractError::MerchantFrozen);
+        }
+        if interval < 60 {
+            env.panic_with_error(ContractError::IntervalMustBePositive);
+        }
+
+        use soroban_sdk::xdr::ToXdr;
+        if token.clone().to_xdr(&env).get(7) == Some(0) {
+            env.panic_with_error(ContractError::InvalidTokenAddress);
+        }
+
+        validation::check_allowance(&env, &user, &token, amount);
+        if interval < 60 {
+            env.panic_with_error(ContractError::IntervalTooShort);
+        }
+
+        if interval < min_interval::get_min_interval(&env) {
+            env.panic_with_error(ContractError::IntervalTooShort);
+        }
+
+        let token_client = token::Client::new(&env, &token);
+        let allowance = token_client.allowance(&user, &env.current_contract_address());
+        if allowance < amount {
+            env.panic_with_error(ContractError::InsufficientAllowance);
+        }
+
+        let now = env.ledger().timestamp();
+        let trial_duration = trial_period.unwrap_or(0);
+        let last_charged = now + trial_duration;
+
+        let existing = storage::get_subscription(&env, &user);
+        let should_increment = existing.as_ref().map_or(true, |s| !s.active);
+
+        let sub = Subscription {
+            merchant,
+            amount,
+            interval,
+            last_charged,
+            active: true,
+            paused: false,
+            token,
+            referrer: referrer.clone(),
+            label: Symbol::new(&env, "default"),
+            trial_duration,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Subscription(user.clone()), &sub);
+
+        extend_subscription_ttl(&env, &user);
         subscribe_inner(&env, user, merchant, amount, interval, token, trial_period, referrer);
     }
 
