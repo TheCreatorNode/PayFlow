@@ -228,7 +228,7 @@ impl FlowPay {
             env.panic_with_error(ContractError::MetadataLabelTooLong);
         }
         subscribe_inner(&env, user.clone(), merchant, amount, interval, token, trial_period, referrer);
-        subscription_metadata::set_metadata(&env, &user, label);
+        let _ = subscription_metadata::set_metadata(&env, &user, label);
     }
 
     /// Charges the next due recurring payment for `user`.

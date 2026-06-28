@@ -166,7 +166,7 @@ fn test_charge_applies_protocol_fee_and_records_net_revenue() {
     env.as_contract(&contract_id, || {
         storage::set_admin(&env, &admin);
     });
-    client.propose_fee(, );
+    client.propose_fee(&collector, &500);
     client.commit_fee(); // 5%
 
     let amount: i128 = 10_0000000;
@@ -200,7 +200,7 @@ fn test_charge_with_zero_fee_bps_skips_fee_transfer() {
     env.as_contract(&contract_id, || {
         storage::set_admin(&env, &admin);
     });
-    client.propose_fee(, );
+    client.propose_fee(&collector, &0);
     client.commit_fee();
 
     let amount: i128 = 5_0000000;
@@ -744,7 +744,7 @@ fn test_pay_per_use_applies_protocol_fee_and_records_net_revenue() {
     env.as_contract(&contract_id, || {
         storage::set_admin(&env, &admin);
     });
-    client.propose_fee(, );
+    client.propose_fee(&collector, &250);
     client.commit_fee(); // 2.5%
 
     client.subscribe(&user, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
@@ -773,7 +773,7 @@ fn test_pay_per_use_with_zero_fee_bps_transfers_full_amount() {
     env.as_contract(&contract_id, || {
         storage::set_admin(&env, &admin);
     });
-    client.propose_fee(, );
+    client.propose_fee(&collector, &0);
     client.commit_fee();
     client.subscribe(&user, &merchant, &1_0000000, &86400, &token_addr, &None, &None);
 
@@ -1345,7 +1345,7 @@ fn test_batch_charge_with_fee() {
 
     let collector = Address::generate(&env);
     let fee_bps: u32 = 100; // 1%
-    client.propose_fee(, );
+    client.propose_fee(&collector, &fee_bps);
     client.commit_fee();
 
     let user_b = Address::generate(&env);
@@ -3158,7 +3158,7 @@ fn test_set_fee_emits_event() {
     });
 
     let collector = Address::generate(&env);
-    client.propose_fee(, );
+    client.propose_fee(&collector, &100);
     client.commit_fee();
 
     let events = env.events().all();
@@ -3180,8 +3180,7 @@ fn test_get_fee_returns_current_fee_settings() {
     });
 
     let collector = Address::generate(&env);
-    client.propose_fee(, );
-    client.commit_fee();
+    client.propose_fee(&collector, &250);
 
     assert_eq!(client.get_fee(), Some((collector, 250u32)));
 }
@@ -3196,7 +3195,7 @@ fn test_set_fee_invalid_bps_panics() {
     });
 
     let collector = Address::generate(&env);
-    client.propose_fee(, );
+    client.propose_fee(&collector, &10001);
     client.commit_fee();
 }
 
