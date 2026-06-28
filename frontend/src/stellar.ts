@@ -230,7 +230,7 @@ export function getDailyLimit(user: string): Promise<bigint | null> {
     if ("error" in result) throw new Error((result as { error: string }).error);
 
     const retval = (result as { result?: { retval?: xdr.ScVal } }).result?.retval;
-    if (!retval || retval.switch().name === "scvVoid") return null;
+    if (!retval) return null;
 
     return ScValDecoder.decodeOption(retval, ScValDecoder.decodeI128);
   });
@@ -253,9 +253,14 @@ export function getDailySpent(user: string): Promise<bigint> {
     if ("error" in result) throw new Error((result as { error: string }).error);
 
     const retval = (result as { result?: { retval?: xdr.ScVal } }).result?.retval;
-    if (!retval || retval.switch().name === "scvVoid") return 0n;
+    if (!retval) return 0n;
 
     return ScValDecoder.decodeI128(retval);
+    try {
+      return ScValDecoder.decodeI128(retval);
+    } catch {
+      return 0n;
+    }
   });
 }
 
@@ -301,6 +306,7 @@ export function getSubscription(user: string): Promise<Subscription | null> {
 
     const result = await server.simulateTransaction(tx);
     if ("error" in result) throw new Error((result as { error: string }).error);
+    if ("error" in result) throw new Error(result.error);
 
     const retval = (result as { result?: { retval?: xdr.ScVal } }).result?.retval;
     if (!retval || retval.switch().name === "scvVoid") return null;
@@ -518,21 +524,26 @@ export function getMerchantRevenue(merchant: string): Promise<bigint> {
       if ("error" in result) return 0n;
 
       const retval = (result as { result?: { retval?: xdr.ScVal } }).result?.retval;
-      if (!retval || retval.switch().name === "scvVoid") return 0n;
+      if (!retval) return 0n;
 
-      return BigInt(retval.i128().toString());
+      return ScValDecoder.decodeI128(retval);
     } catch {
       return 0n;
     }
   });
 }
 
-export async function getBalance(publicKey: string): Promise<string> {
+export async function getBalance(publicKey: string, fields?: { asset_type?: string }): Promise<string> {
   try {
-    const resp = await fetch(`https://horizon-testnet.stellar.org/accounts/${publicKey}`);
+    // Note: Horizon /accounts/{id} endpoint does not support filtering by asset_type,
+    // so we append the query parameter but still parse client-side.
+    const query = fields?.asset_type ? `?asset_type=${fields.asset_type}` : "";
+    const resp = await fetch(`https://horizon-testnet.stellar.org/accounts/${publicKey}${query}`);
     if (!resp.ok) throw new Error(`Horizon API error: ${resp.status}`);
     const data = await resp.json();
-    const nativeBalance = data.balances?.find((b: { asset_type: string; balance: string }) => b.asset_type === "native");
+    
+    const assetType = fields?.asset_type ?? "native";
+    const nativeBalance = data.balances?.find((b: { asset_type: string; balance: string }) => b.asset_type === assetType);
     return nativeBalance?.balance ?? "0";
   } catch {
     return "0";
@@ -565,9 +576,9 @@ export function getAllowance(owner: string, tokenId = TOKEN_CONTRACT_ID): Promis
       if ("error" in result) return 0n;
 
       const retval = (result as { result?: { retval?: xdr.ScVal } }).result?.retval;
-      if (!retval || retval.switch().name === "scvVoid") return 0n;
+      if (!retval) return 0n;
 
-      return BigInt(retval.i128().toString());
+      return ScValDecoder.decodeI128(retval);
     } catch {
       return 0n;
     }
@@ -613,6 +624,9 @@ export async function fetchEvents(
     return {
       events,
       nextCursor: undefined,
+      nextCursor: response.latestLedger > 0 && response.events.length > 0
+        ? response.events[response.events.length - 1].pagingToken
+        : undefined,
     };
   } catch {
     return { events: [] };

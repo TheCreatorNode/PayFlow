@@ -271,6 +271,8 @@ export default function SubscriptionHistory({ userKey }: Props) {
           </button>
         </div>
       )}
+
+      {/* Pagination controls */}
       {totalPages > 1 && (
         <div
           style={{
