@@ -296,6 +296,8 @@
                 "durability": "persistent",
                 "val": {
                   "u64": 2
+<<<<<<< HEAD
+=======
                 }
               }
             },
@@ -380,6 +382,7 @@
                 "durability": "persistent",
                 "val": {
                   "u64": 1
+>>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
                 }
               }
             },
