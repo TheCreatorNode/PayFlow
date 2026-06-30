@@ -1052,6 +1052,8 @@
             "topics": [
               {
                 "symbol": "fee_proposed"
+<<<<<<< HEAD
+=======
               }
             ],
             "data": {
@@ -1126,6 +1128,7 @@
               {
                 "symbol": "fee_committed"
                 "symbol": "fee_proposed"
+>>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
               }
             ],
             "data": {
@@ -1206,7 +1209,11 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                 },
                 {
+<<<<<<< HEAD
+                  "u32": 100
+=======
                   "u32": 500
+>>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
                 }
               ]
             }

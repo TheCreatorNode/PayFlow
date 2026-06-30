@@ -53,6 +53,13 @@ pub fn get_charge_history_ttl(env: &Env, user: &Address) -> u32 {
     } else {
         0
     }
+        .set(&DataKey::ChargeHistory(user.clone()), &history);
+
+    env.storage().persistent().extend_ttl(
+        &DataKey::ChargeHistory(user.clone()),
+        SUBSCRIPTION_TTL_LEDGERS / 2,
+        SUBSCRIPTION_TTL_LEDGERS,
+    );
 }
 
 /// Clears the stored charge history for a subscriber.
