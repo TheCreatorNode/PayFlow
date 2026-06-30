@@ -933,19 +933,10 @@
                 "bytes": "48f1b6b8bc0d60f7140dd49b6120fbaf3cdbab2adaeea631313d9f0bae9532f1"
               },
               {
-                "symbol": "allowance"
+                "symbol": "decimals"
               }
             ],
-            "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                }
-              ]
-            }
+            "data": "void"
           }
         }
       },
@@ -963,14 +954,11 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "allowance"
+                "symbol": "decimals"
               }
             ],
             "data": {
-              "i128": {
-                "hi": 0,
-                "lo": 100000000000
-              }
+              "u32": 7
             }
           }
         }

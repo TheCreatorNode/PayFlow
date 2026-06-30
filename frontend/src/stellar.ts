@@ -14,7 +14,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { Server, assembleTransaction } from "@stellar/stellar-sdk/rpc";
-import type { Subscription, ChargeEvent } from "./types";
+import type { Subscription, ChargeEvent, SubscriptionValidationReport } from "./types";
 import { ScValDecoder } from "./services/scval";
 import { dedupedCall } from "./services/rpcCache";
 
@@ -303,12 +303,11 @@ export function getSubscription(user: string): Promise<Subscription | null> {
       .build();
 
     const result = await server.simulateTransaction(tx);
+    if ("error" in result) throw new Error((result as { error: string }).error);
     if ("error" in result) throw new Error(result.error);
 
     const retval = (result as { result?: { retval?: xdr.ScVal } }).result?.retval;
-    if (!retval) return null;
-
-    if (retval.switch().name === "scvVoid") return null;
+    if (!retval || retval.switch().name === "scvVoid") return null;
 
     const subscriptionData = ScValDecoder.decodeStruct(retval, {
       merchant: ScValDecoder.decodeAddress,
@@ -536,12 +535,17 @@ export function getMerchantRevenue(merchant: string): Promise<bigint> {
   });
 }
 
-export async function getBalance(publicKey: string): Promise<string> {
+export async function getBalance(publicKey: string, fields?: { asset_type?: string }): Promise<string> {
   try {
-    const resp = await fetch(`https://horizon-testnet.stellar.org/accounts/${publicKey}`);
+    // Note: Horizon /accounts/{id} endpoint does not support filtering by asset_type,
+    // so we append the query parameter but still parse client-side.
+    const query = fields?.asset_type ? `?asset_type=${fields.asset_type}` : "";
+    const resp = await fetch(`https://horizon-testnet.stellar.org/accounts/${publicKey}${query}`);
     if (!resp.ok) throw new Error(`Horizon API error: ${resp.status}`);
     const data = await resp.json();
-    const nativeBalance = data.balances?.find((b: { asset_type: string; balance: string }) => b.asset_type === "native");
+    
+    const assetType = fields?.asset_type ?? "native";
+    const nativeBalance = data.balances?.find((b: { asset_type: string; balance: string }) => b.asset_type === assetType);
     return nativeBalance?.balance ?? "0";
   } catch {
     return "0";
@@ -625,7 +629,9 @@ export async function fetchEvents(
 
     return {
       events,
-      nextCursor: response.events.length > 0 ? response.events[response.events.length - 1].pagingToken : undefined,
+      nextCursor: response.latestLedger > 0 && response.events.length > 0
+        ? response.events[response.events.length - 1].pagingToken
+        : undefined,
     };
   } catch {
     return { events: [] };
@@ -676,4 +682,281 @@ export async function getChargeHistory(user: string): Promise<ChargeEvent[]> {
     return [];
   }
 }
+
+// ── Admin diagnostics ───────────────────────────────────────────────────────
+
+export interface ContractHealthReport {
+  rpcReachable: boolean;
+  contractPaused: boolean;
+  tokenConfigured: boolean;
+  activeSubscriptions: number;
+  subscriptionTtlLedgers: number | null;
+  checkedAt: Date;
+}
+
+export async function getContractHealth(caller: string): Promise<ContractHealthReport> {
+  const report: ContractHealthReport = {
+    rpcReachable: false,
+    contractPaused: false,
+    tokenConfigured: false,
+    activeSubscriptions: 0,
+    subscriptionTtlLedgers: null,
+    checkedAt: new Date(),
+  };
+
+  try {
+    await server.getHealth();
+    report.rpcReachable = true;
+  } catch {
+    return report;
+  }
+
+  const contract = new Contract(CONTRACT_ID);
+
+  async function simCall(method: string, args: xdr.ScVal[] = []): Promise<xdr.ScVal | null> {
+    try {
+      const account = await server.getAccount(caller);
+      const tx = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      })
+        .addOperation(contract.call(method, ...args))
+        .setTimeout(30)
+        .build();
+      const result = await server.simulateTransaction(tx);
+      if ("error" in result) return null;
+      return (result as { result?: { retval?: xdr.ScVal } }).result?.retval ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Check if contract is paused
+  const pausedVal = await simCall("is_contract_paused");
+  if (pausedVal && pausedVal.switch().name !== "scvVoid") {
+    report.contractPaused = pausedVal.b?.() ?? false;
+  }
+
+  // Check token configured: get_active_count succeeds only when initialized
+  const countVal = await simCall("get_active_count");
+  if (countVal && countVal.switch().name !== "scvVoid") {
+    report.tokenConfigured = true;
+    try {
+      report.activeSubscriptions = Number(countVal.u64());
+    } catch {
+      report.activeSubscriptions = 0;
+    }
+  }
+
+  return report;
+}
+
+const VALIDATION_TIMEOUT_MS = 30_000;
+
+function parseScString(val: xdr.ScVal): string {
+  switch (val.switch().name) {
+    case "scvString":
+      return val.str().toString();
+    case "scvSymbol":
+      return val.sym().toString();
+    default:
+      return val.toString();
+  }
+}
+
+function parseStringVec(val: xdr.ScVal | undefined): string[] {
+  if (!val || val.switch().name === "scvVoid") return [];
+
+  const items =
+    typeof (val as any).vec === "function"
+      ? ((val as any).vec() as xdr.ScVal[])
+      : ((val as any)._value?.vec as xdr.ScVal[] | undefined);
+
+  if (!Array.isArray(items)) return [];
+  return items.map(parseScString).filter(Boolean);
+}
+
+function parseValidationReport(retval: xdr.ScVal): SubscriptionValidationReport {
+  const report: SubscriptionValidationReport = {
+    isValid: true,
+    violations: [],
+    missingRecords: [],
+    invalidStateTransitions: [],
+    corruptedReferences: [],
+  };
+
+  if (retval.switch().name === "scvVoid") {
+    return report;
+  }
+
+  for (const entry of retval.map() ?? []) {
+    const key = entry.key().sym().toString();
+    const val = entry.val();
+
+    switch (key) {
+      case "is_valid":
+        report.isValid = val.b();
+        break;
+      case "violations":
+        report.violations = parseStringVec(val);
+        break;
+      case "missing_records":
+        report.missingRecords = parseStringVec(val);
+        break;
+      case "invalid_state_transitions":
+        report.invalidStateTransitions = parseStringVec(val);
+        break;
+      case "corrupted_references":
+        report.corruptedReferences = parseStringVec(val);
+        break;
+    }
+  }
+
+  return report;
+}
+
+async function simulateContractRead(
+  sourcePublicKey: string,
+  method: string,
+  args: xdr.ScVal[],
+  timeoutMs = VALIDATION_TIMEOUT_MS
+): Promise<xdr.ScVal | null> {
+  const account = await server.getAccount(sourcePublicKey);
+  const contract = new Contract(CONTRACT_ID);
+
+  const tx = new TransactionBuilder(account, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(contract.call(method, ...args))
+    .setTimeout(30)
+    .build();
+
+  const simPromise = server.simulateTransaction(tx);
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error("Validation request timed out")), timeoutMs);
+  });
+
+  const result = await Promise.race([simPromise, timeoutPromise]);
+  if ("error" in result) throw new Error(result.error);
+
+  return (result as { result?: { retval?: xdr.ScVal } }).result?.retval ?? null;
+}
+
+/** Returns the configured contract admin address, or null if unset. */
+export async function getContractAdmin(sourcePublicKey: string): Promise<string | null> {
+  if (!CONTRACT_ID) throw new Error("VITE_CONTRACT_ID is not configured.");
+
+  try {
+    const retval = await simulateContractRead(sourcePublicKey, "get_admin", []);
+    if (!retval || retval.switch().name === "scvVoid") return null;
+
+    if (retval.switch().name === "scvAddress") {
+      return Address.fromScVal(retval).toString();
+    }
+
+    // Option<Address>
+    const inner = (retval as any).value?.() ?? (retval as any)._value;
+    if (inner) {
+      return Address.fromScVal(inner).toString();
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Runs on-chain subscription integrity diagnostics for a user address. */
+export async function validateSubscription(
+  sourcePublicKey: string,
+  userAddress: string
+): Promise<SubscriptionValidationReport> {
+  if (!CONTRACT_ID) throw new Error("VITE_CONTRACT_ID is not configured.");
+
+  const retval = await simulateContractRead(sourcePublicKey, "validate_subscription", [
+    addressVal(userAddress),
+  ]);
+
+  if (!retval) {
+    throw new Error("Contract returned no validation result");
+  }
+
+  return parseValidationReport(retval);
+}
+
+export async function buildRepairSubscriptionTx(
+  adminPublicKey: string,
+  userAddress: string
+): Promise<string> {
+  return buildTx(adminPublicKey, "repair_subscription", [addressVal(userAddress)]);
+}
+
+function parseFixedInconsistenciesFromEventValue(value: unknown): number | null {
+  if (value == null) return null;
+
+  const raw = value as any;
+
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "bigint") return Number(raw);
+
+  const direct =
+    raw?._value?.fixed_inconsistencies ??
+    raw?.fixed_inconsistencies ??
+    raw?._value ??
+    raw;
+
+  if (typeof direct === "number") return direct;
+  if (typeof direct === "bigint") return Number(direct);
+
+  if (typeof direct?.u32 === "function") return Number(direct.u32());
+  if (typeof direct?.toString === "function" && /^\d+$/.test(direct.toString())) {
+    return Number(direct.toString());
+  }
+
+  return null;
+}
+
+/** Extracts the fixed inconsistency count from a `subscription_repaired` contract event. */
+export async function parseSubscriptionRepairedEvent(txHash: string): Promise<number | null> {
+  try {
+    const tx = await server.getTransaction(txHash);
+    if (tx.status !== "SUCCESS") return null;
+
+    const events = (tx as { events?: Array<{ topic?: unknown[]; value?: unknown }> }).events ?? [];
+
+    for (const event of events) {
+      const topicName = event.topic?.[0]?.toString?.() ?? String(event.topic?.[0] ?? "");
+      if (topicName !== "subscription_repaired") continue;
+
+      const count = parseFixedInconsistenciesFromEventValue(event.value);
+      if (count != null && !Number.isNaN(count)) {
+        return count;
+      }
+    }
+
+    // Fallback: scan recent contract events tied to this transaction hash.
+    const response = await server.getEvents({
+      startLedger: undefined,
+      filters: [{ type: "contract", contractIds: [CONTRACT_ID] }],
+      limit: 50,
+    });
+
+    for (const event of response.events) {
+      if ((event as any).txHash !== txHash && (event as any).id !== txHash) continue;
+      const topicName = event.topic?.[0]?.toString?.() ?? "";
+      if (topicName !== "subscription_repaired") continue;
+
+      const count = parseFixedInconsistenciesFromEventValue(event.value);
+      if (count != null && !Number.isNaN(count)) {
+        return count;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 
