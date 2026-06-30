@@ -2774,7 +2774,7 @@ fn test_initialize_without_valid_token() {
     let admin = Address::generate(&env);
 
     client.initialize(&invalid_token, &admin);
-    
+
     // Success means it didn't panic, which is the current expected behavior.
 }
 
