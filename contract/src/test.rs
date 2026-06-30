@@ -832,6 +832,153 @@ fn test_pay_per_use_applies_protocol_fee_and_records_net_revenue() {
     assert_eq!(client.get_merchant_revenue(&merchant), expected_net);
 }
 
+// ─────────────────────────────────────────────
+// CONTRACT-23: pay_per_use_to tests
+// ─────────────────────────────────────────────
+
+#[test]
+fn test_pay_per_use_to_transfers_to_recipient_not_merchant() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+    let recipient = Address::generate(&env);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    let amount: i128 = 5_0000000;
+    let merchant_before = token.balance(&merchant);
+    let recipient_before = token.balance(&recipient);
+
+    client.pay_per_use_to(&user, &amount, &recipient);
+
+    assert_eq!(token.balance(&merchant), merchant_before);
+    assert_eq!(token.balance(&recipient) - recipient_before, amount);
+    assert_eq!(client.get_merchant_revenue(&recipient), amount);
+    assert_eq!(client.get_merchant_revenue(&merchant), 0);
+}
+
+#[test]
+fn test_pay_per_use_to_applies_protocol_fee_to_recipient() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+    let admin = Address::generate(&env);
+    let collector = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+    client.propose_fee(&collector, &250);
+    client.commit_fee(); // 2.5%
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    let amount: i128 = 8_0000000;
+    let expected_fee: i128 = 200_0000;
+    let expected_net: i128 = amount - expected_fee;
+    let recipient_before = token.balance(&recipient);
+    let collector_before = token.balance(&collector);
+
+    client.pay_per_use_to(&user, &amount, &recipient);
+
+    assert_eq!(token.balance(&recipient) - recipient_before, expected_net);
+    assert_eq!(token.balance(&collector) - collector_before, expected_fee);
+    assert_eq!(client.get_merchant_revenue(&recipient), expected_net);
+}
+
+#[test]
+#[should_panic]
+fn test_pay_per_use_to_rejects_non_whitelisted_recipient() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    env.as_contract(&contract_id, || {
+        storage::set_admin(&env, &admin);
+    });
+    client.add_merchant(&merchant);
+    client.set_whitelist_enabled(&true);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    let recipient = Address::generate(&env); // never whitelisted
+    client.pay_per_use_to(&user, &1_0000000, &recipient);
+}
+
+#[test]
+fn test_pay_per_use_to_recipient_equals_merchant_behaves_like_pay_per_use() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let token = TokenClient::new(&env, &token_addr);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+
+    let amount: i128 = 3_0000000;
+    let merchant_before = token.balance(&merchant);
+
+    client.pay_per_use_to(&user, &amount, &merchant);
+
+    assert_eq!(token.balance(&merchant) - merchant_before, amount);
+    assert_eq!(client.get_merchant_revenue(&merchant), amount);
+}
+
+#[test]
+#[should_panic]
+fn test_pay_per_use_to_daily_limit_shared_with_pay_per_use() {
+    let (env, contract_id, token_addr, user, merchant) = setup();
+    let client = FlowPayClient::new(&env, &contract_id);
+    let recipient = Address::generate(&env);
+
+    client.subscribe(
+        &user,
+        &merchant,
+        &1_0000000,
+        &86400,
+        &token_addr,
+        &None,
+        &None,
+    );
+    client.set_daily_limit(&user, &10_0000000);
+
+    client.pay_per_use(&user, &6_0000000);
+    // Combined spend (6 + 6 = 12) exceeds the 10 limit, even though this
+    // second call routes through pay_per_use_to to a different recipient.
+    client.pay_per_use_to(&user, &6_0000000, &recipient);
+}
+
 #[test]
 fn test_pay_per_use_with_zero_fee_bps_transfers_full_amount() {
     let (env, contract_id, token_addr, user, merchant) = setup();

@@ -356,62 +356,34 @@ impl FlowPay {
     /// Transfers `amount` to the subscription merchant, updates merchant revenue
     /// and daily spend tracking, and emits `pay_per_use`.
     pub fn pay_per_use(env: Env, user: Address, amount: i128) {
-        ensure_contract_not_paused(&env);
-        user.require_auth();
+        pay_per_use_inner(&env, user, amount, None);
+    }
 
-        if amount <= 0 {
-            env.panic_with_error(ContractError::AmountMustBePositive);
-        }
-        if amount > MAX_AMOUNT {
-            env.panic_with_error(ContractError::AmountExceedsMaximum);
-        }
-
-        let key = DataKey::Subscription(user.clone());
-
-        let sub: Subscription = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
-
-        if !sub.active {
-            env.panic_with_error(ContractError::SubscriptionInactive);
-        }
-        if sub.paused {
-            env.panic_with_error(ContractError::SubscriptionPaused);
-        }
-
-        spending_limit::enforce_limit(&env, &user, amount);
-
-        let token = token::Client::new(&env, &sub.token);
-
-        let mut merchant_amount = amount;
-        if let Some((collector, bps)) = fee::get_fee(&env) {
-            let fee_amount = (amount * (bps as i128)) / 10_000;
-            if fee_amount > 0 {
-                token.transfer_from(
-                    &env.current_contract_address(),
-                    &user,
-                    &collector,
-                    &fee_amount,
-                );
-                merchant_amount = amount - fee_amount;
-            }
-        }
-
-        token.transfer_from(
-            &env.current_contract_address(),
-            &user,
-            &sub.merchant,
-            &merchant_amount,
-        );
-
-        check_and_update_global_volume(&env, amount);
-        merchant_stats::increment_revenue_with_daily(&env, &sub.merchant, merchant_amount);
-        spending_limit::record_spend(&env, &user, amount);
-        extend_subscription_ttl(&env, &user);
-
-        events::publish_pay_per_use(&env, &user, &sub.merchant, amount);
+    /// Executes an immediate pay-per-use charge for an active subscription,
+    /// routing payment to `recipient` instead of the subscription's merchant.
+    ///
+    /// # Parameters
+    ///
+    /// - `user`: Subscriber address. Must authorize the call.
+    /// - `amount`: One-time amount to transfer. Must be greater than zero.
+    /// - `recipient`: Address that receives the net payment instead of `sub.merchant`.
+    ///
+    /// # Auth
+    ///
+    /// Requires authorization from `user`.
+    ///
+    /// # Errors
+    ///
+    /// Same as `pay_per_use`, plus panics if the merchant whitelist is enabled
+    /// and `recipient` is not whitelisted.
+    ///
+    /// # Side Effects
+    ///
+    /// Transfers `amount` to `recipient`, updates `recipient`'s merchant revenue
+    /// and the user's daily spend tracking (shared with `pay_per_use`), and
+    /// emits `pay_per_use` with `recipient` in place of `sub.merchant`.
+    pub fn pay_per_use_to(env: Env, user: Address, amount: i128, recipient: Address) {
+        pay_per_use_inner(&env, user, amount, Some(recipient));
     }
 
     /// Cancels `user`'s active subscription.
@@ -1349,6 +1321,61 @@ fn extend_subscription_ttl(env: &Env, user: &Address) {
     env.storage()
         .instance()
         .extend_ttl(SUBSCRIPTION_TTL_LEDGERS, SUBSCRIPTION_TTL_LEDGERS);
+}
+
+/// Shared implementation for `pay_per_use` and `pay_per_use_to`. `recipient`
+/// is `None` for `pay_per_use` (defaults to `sub.merchant`, matching its
+/// existing behavior exactly) and `Some(addr)` for `pay_per_use_to`.
+fn pay_per_use_inner(env: &Env, user: Address, amount: i128, recipient: Option<Address>) {
+    ensure_contract_not_paused(env);
+    user.require_auth();
+
+    if amount <= 0 {
+        env.panic_with_error(ContractError::AmountMustBePositive);
+    }
+    if amount > MAX_AMOUNT {
+        env.panic_with_error(ContractError::AmountExceedsMaximum);
+    }
+
+    let key = DataKey::Subscription(user.clone());
+
+    let sub: Subscription = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| env.panic_with_error(ContractError::NoSubscriptionFound));
+
+    if !sub.active {
+        env.panic_with_error(ContractError::SubscriptionInactive);
+    }
+    if sub.paused {
+        env.panic_with_error(ContractError::SubscriptionPaused);
+    }
+
+    // Only the explicit `pay_per_use_to` path re-validates the whitelist;
+    // `pay_per_use` (recipient == None) keeps its existing behavior of not
+    // re-checking a merchant that was already whitelisted at subscribe time.
+    let is_pay_per_use_to = recipient.is_some();
+    let recipient = recipient.unwrap_or_else(|| sub.merchant.clone());
+
+    if is_pay_per_use_to
+        && whitelist::is_whitelist_enabled(env)
+        && !whitelist::is_whitelisted(env, &recipient)
+    {
+        env.panic_with_error(ContractError::MerchantNotWhitelisted);
+    }
+
+    spending_limit::enforce_limit(env, &user, amount);
+
+    let fee_amount = fee::transfer_pay_per_use(env, &user, &sub.token, amount, &recipient);
+    let net_amount = amount - fee_amount;
+
+    check_and_update_global_volume(env, amount);
+    merchant_stats::increment_revenue_with_daily(env, &recipient, net_amount);
+    spending_limit::record_spend(env, &user, amount);
+    extend_subscription_ttl(env, &user);
+
+    events::publish_pay_per_use(env, &user, &recipient, amount);
 }
 
 fn subscribe_inner(
