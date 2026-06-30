@@ -256,11 +256,8 @@ export function getDailySpent(user: string): Promise<bigint> {
 
 <<<<<<< HEAD
 =======
-<<<<<<< HEAD
-=======
     return ScValDecoder.decodeI128(retval);
 >>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
->>>>>>> origin/master
     try {
       return ScValDecoder.decodeI128(retval);
     } catch {
@@ -319,11 +316,8 @@ export function getSubscription(user: string): Promise<Subscription | null> {
 <<<<<<< HEAD
     if (retval.switch().name === "scvVoid") return null;
 
-<<<<<<< HEAD
-=======
 =======
 >>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
->>>>>>> origin/master
     const subscriptionData = ScValDecoder.decodeStruct(retval, {
       merchant: ScValDecoder.decodeAddress,
       amount: (v) => ScValDecoder.decodeI128(v).toString(),
@@ -540,20 +534,14 @@ export function getMerchantRevenue(merchant: string): Promise<bigint> {
       if (!retval) return 0n;
 
 <<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> origin/master
       try {
         return ScValDecoder.decodeI128(retval);
       } catch {
         return 0n;
       }
-<<<<<<< HEAD
-=======
 =======
       return ScValDecoder.decodeI128(retval);
 >>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
->>>>>>> origin/master
     } catch {
       return 0n;
     }
@@ -606,20 +594,14 @@ export function getAllowance(owner: string, tokenId = TOKEN_CONTRACT_ID): Promis
       if (!retval) return 0n;
 
 <<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> origin/master
       try {
         return ScValDecoder.decodeI128(retval);
       } catch {
         return 0n;
       }
-<<<<<<< HEAD
-=======
 =======
       return ScValDecoder.decodeI128(retval);
 >>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
->>>>>>> origin/master
     } catch {
       return 0n;
     }
@@ -667,15 +649,11 @@ export async function fetchEvents(
 <<<<<<< HEAD
       nextCursor: response.events.length > 0 ? response.events[response.events.length - 1].pagingToken : undefined,
 =======
-<<<<<<< HEAD
-      nextCursor: response.events.length > 0 ? response.events[response.events.length - 1].pagingToken : undefined,
-=======
       nextCursor: undefined,
       nextCursor: response.latestLedger > 0 && response.events.length > 0
         ? response.events[response.events.length - 1].pagingToken
         : undefined,
 >>>>>>> 6d2bb0bdee2f908481093df56db7a244c0dd0e50
->>>>>>> origin/master
     };
   } catch {
     return { events: [] };
