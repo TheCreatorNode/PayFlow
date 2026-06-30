@@ -17,6 +17,7 @@ pub fn check_allowance(env: &Env, user: &Address, token: &Address, min_amount: i
 /// Composable helper that asserts a subscription is ready to be used:
 /// the subscription must be active and the user must have sufficient
 /// allowance for the subscription's token and amount.
+#[allow(dead_code)]
 pub fn validate_subscription_readiness(env: &Env, user: &Address, sub: &Subscription) {
     if !sub.active {
         env.panic_with_error(ContractError::SubscriptionNotActive);
@@ -45,18 +46,22 @@ pub fn require_valid_interval(env: &Env, new_interval: u64) {
     }
 }
 
+#[allow(dead_code)]
 pub fn require_positive_amount(amount: i128) {
     assert!(amount > 0, "amount must be positive");
 }
 
+#[allow(dead_code)]
 pub fn require_positive_interval(interval: u64) {
     assert!(interval > 0, "interval must be positive");
 }
 
+#[allow(dead_code)]
 pub fn require_active_subscription(active: bool) {
     assert!(active, "subscription is not active");
 }
 
+#[allow(dead_code)]
 pub fn require_charge_interval_elapsed(now: u64, last_charged: u64, interval: u64) {
     assert!(now >= last_charged + interval, "interval not elapsed yet");
 }

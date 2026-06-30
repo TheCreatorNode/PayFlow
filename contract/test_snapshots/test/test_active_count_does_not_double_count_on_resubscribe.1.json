@@ -295,7 +295,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u64": 1
+                  "u64": 0
                 }
               }
             },
@@ -502,7 +502,7 @@
                         "symbol": "label"
                       },
                       "val": {
-                        "symbol": "default"
+                        "symbol": ""
                       }
                     },
                     {
@@ -602,7 +602,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ],
       [
@@ -1006,7 +1006,7 @@
             },
             "ext": "v0"
           },
-          4095
+          6307200
         ]
       ]
     ]
@@ -1936,7 +1936,7 @@
                     "symbol": "label"
                   },
                   "val": {
-                    "symbol": "default"
+                    "symbol": ""
                   }
                 },
                 {

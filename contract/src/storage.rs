@@ -2,6 +2,7 @@ use soroban_sdk::{Address, Env};
 
 use crate::{DataKey, Subscription};
 
+#[allow(dead_code)]
 pub fn set_subscription(env: &Env, user: &Address, sub: &Subscription) {
     env.storage()
         .persistent()
@@ -14,6 +15,7 @@ pub fn get_subscription(env: &Env, user: &Address) -> Option<Subscription> {
         .get(&DataKey::Subscription(user.clone()))
 }
 
+#[allow(dead_code)]
 pub fn set_token(env: &Env, token: &Address) {
     env.storage().instance().set(&DataKey::Token, token);
 }
@@ -45,5 +47,7 @@ pub fn is_contract_paused(env: &Env) -> bool {
 }
 
 pub fn set_contract_paused(env: &Env, paused: bool) {
-    env.storage().instance().set(&DataKey::ContractPaused, &paused);
+    env.storage()
+        .instance()
+        .set(&DataKey::ContractPaused, &paused);
 }
