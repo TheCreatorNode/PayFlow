@@ -76,17 +76,6 @@ pub fn publish_subscription_paused(env: &Env, user: &Address) {
         .publish((Symbol::new(env, "subscription_paused"), user.clone()), ());
 }
 
-pub fn publish_subscription_transferred(env: &Env, old_user: &Address, new_user: &Address) {
-    env.events().publish(
-        (Symbol::new(env, "sub_transferred"), old_user.clone()),
-        new_user.clone(),
-    );
-}
-
-pub fn publish_upgraded(env: &Env, _new_wasm_hash: &BytesN<32>) {
-    env.events().publish((Symbol::new(env, "upgrade"),), ());
-}
-
 pub fn publish_upgrade_proposed(env: &Env, new_wasm_hash: &BytesN<32>) {
     env.events()
         .publish((Symbol::new(env, "upg_proposed"),), new_wasm_hash.clone());
@@ -116,6 +105,7 @@ pub fn publish_fee_cleared(env: &Env) {
     env.events()
         .publish((Symbol::new(env, "fee_cleared"),), ());
 }
+
 pub fn publish_subscription_amount_updated(
     env: &Env,
     user: &Address,
@@ -210,4 +200,14 @@ pub fn publish_grace_period_committed(env: &Env, seconds: u64) {
 pub fn publish_subscription_auto_resumed(env: &Env, user: &Address) {
     env.events()
         .publish((Symbol::new(env, "subscription_auto_resumed"), user.clone()), ());
+}
+
+pub fn publish_upgraded(env: &Env, new_wasm_hash: &BytesN<32>) {
+    env.events()
+        .publish((Symbol::new(env, "upgrade"),), new_wasm_hash.clone());
+}
+
+pub fn publish_subscription_transferred(env: &Env, old_user: &Address, new_user: &Address) {
+    env.events()
+        .publish((Symbol::new(env, "subscription_transferred"), old_user.clone(), new_user.clone()), ());
 }
