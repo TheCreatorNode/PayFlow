@@ -225,6 +225,18 @@ impl FlowPay {
         env.storage().instance().set(&DataKey::MaxBatchSize, &size);
     }
 
+    pub fn get_max_batch_size(env: Env) -> u32 {
+        batch::get_max_batch_size(&env)
+    }
+
+    pub fn set_max_batch_size(env: Env, size: u32) {
+        admin::require_admin(&env);
+        if size > 200 {
+            env.panic_with_error(ContractError::InvalidBatchSize);
+        }
+        env.storage().instance().set(&DataKey::MaxBatchSize, &size);
+    }
+
     /// Creates or replaces a recurring subscription for `user`.
     ///
     /// # Parameters
@@ -522,6 +534,11 @@ impl FlowPay {
         cancel_inner(&env, &user);
         events::publish_cancelled(&env, &user);
     }
+
+    pub fn cancel_and_refund_prorated(env: Env, user: Address, merchant: Address) {
+        user.require_auth();
+        merchant.require_auth();
+
 
     pub fn cancel_and_refund_prorated(env: Env, user: Address, merchant: Address) {
         user.require_auth();
@@ -1529,6 +1546,8 @@ impl FlowPay {
 }
 
 fn extend_subscription_ttl(env: &Env, user: &Address) {
+    storage::extend_subscription_ttl(env, user);
+    env.storage().instance().extend_ttl(SUBSCRIPTION_TTL_LEDGERS, SUBSCRIPTION_TTL_LEDGERS);
     storage::extend_subscription_ttl(env, user);
     env.storage().instance().extend_ttl(SUBSCRIPTION_TTL_LEDGERS, SUBSCRIPTION_TTL_LEDGERS);
 /// Refreshes the contract instance's TTL. Instance storage holds shared
